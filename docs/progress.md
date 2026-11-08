@@ -70,7 +70,7 @@
   - Join Group confirmation modal with clear notice: "Joining does not oblige you to buy"
   - Verify build & commit: `add buyer preferences, wishlist and group discovery`
 
-- [ ] **Task 9**: Group Creation, Group Detail & Invite System
+- [x] **Task 9**: Group Creation, Group Detail & Invite System
   - Create Group flow (model & variant selection in buyer's district)
   - Group Detail view: status timeline, milestone badge ("Strong group" at target), member list displaying First Name + Initial only
   - Waiting countdown badge ("Becomes visible to dealers at 3 members, or after 20 days with 2 members")

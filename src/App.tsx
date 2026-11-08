@@ -10,6 +10,9 @@ import { DealerRegisterPage } from '@/pages/auth/DealerRegisterPage';
 import { ForgotPasswordPage } from '@/pages/auth/ForgotPasswordPage';
 import { PendingApprovalPage } from '@/pages/dealer/PendingApprovalPage';
 import { FindGroupsPage } from '@/pages/buyer/FindGroupsPage';
+import { MyGroupsPage } from '@/pages/buyer/MyGroupsPage';
+import { CreateGroupPage } from '@/pages/buyer/CreateGroupPage';
+import { GroupDetailPage } from '@/pages/buyer/GroupDetailPage';
 import { WishlistPage } from '@/pages/buyer/WishlistPage';
 import { BuyerPreferencesPage } from '@/pages/buyer/BuyerPreferencesPage';
 
@@ -38,6 +41,30 @@ export default function App() {
                   element={
                     <ProtectedRoute allowedRoles={['buyer']}>
                       <FindGroupsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/buyer/groups/create"
+                  element={
+                    <ProtectedRoute allowedRoles={['buyer']}>
+                      <CreateGroupPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/buyer/groups"
+                  element={
+                    <ProtectedRoute allowedRoles={['buyer']}>
+                      <MyGroupsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/buyer/groups/:id"
+                  element={
+                    <ProtectedRoute allowedRoles={['buyer']}>
+                      <GroupDetailPage />
                     </ProtectedRoute>
                   }
                 />
