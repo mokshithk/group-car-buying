@@ -45,7 +45,7 @@
   - RLS isolation verification queries
   - Verify build & commit: `add rls policies, seed data and approval snippet`
 
-- [ ] **Task 6**: Authentication, Role Guards & Auth Pages
+- [x] **Task 6**: Authentication, Role Guards & Auth Pages
   - Auth context and session management
   - Route guards (Buyer, Dealer, Guest) with redirect-back preserving intended destination
   - Shared Login page with role-based redirection

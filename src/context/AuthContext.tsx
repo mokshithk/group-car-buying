@@ -1,0 +1,432 @@
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { Profile, Dealership, UserRole } from '@/types';
+import type { User } from '@supabase/supabase-js';
+
+export interface BuyerRegistrationData {
+  fullName: string;
+  email: string;
+  phone: string;
+  districtId: string;
+  password: string;
+  consentShareDetails: boolean;
+}
+
+export interface DealerRegistrationData {
+  dealershipName: string;
+  ownerName: string;
+  email: string;
+  phone: string;
+  districtId: string;
+  address: string;
+  gstNumber: string;
+  brands: string[];
+  password: string;
+}
+
+interface AuthContextType {
+  user: User | null;
+  profile: Profile | null;
+  dealership: Dealership | null;
+  role: UserRole | null;
+  isLoading: boolean;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; role?: UserRole }>;
+  registerBuyer: (data: BuyerRegistrationData) => Promise<{ success: boolean; error?: string }>;
+  registerDealer: (data: DealerRegistrationData) => Promise<{ success: boolean; error?: string }>;
+  logout: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
+  setMockSession: (role: UserRole, profileData?: Partial<Profile>, dealershipData?: Partial<Dealership>) => void;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [dealership, setDealership] = useState<Dealership | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchProfileAndDealership = useCallback(async (userId: string) => {
+    try {
+      if (!isSupabaseConfigured()) {
+        return;
+      }
+      const { data: prof, error: profError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (profError) throw profError;
+      if (prof) {
+        setProfile(prof as Profile);
+
+        if (prof.role === 'dealer') {
+          const { data: dealerUser } = await supabase
+            .from('dealer_users')
+            .select('dealership_id')
+            .eq('user_id', userId)
+            .maybeSingle();
+
+          if (dealerUser) {
+            const { data: dealerData } = await supabase
+              .from('dealerships')
+              .select('*')
+              .eq('id', dealerUser.dealership_id)
+              .maybeSingle();
+
+            if (dealerData) {
+              setDealership(dealerData as Dealership);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching profile:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isSupabaseConfigured()) {
+      // Check localStorage for mock session in offline/preview testing
+      const savedMock = localStorage.getItem('autogroup_mock_session');
+      if (savedMock) {
+        try {
+          const parsed = JSON.parse(savedMock);
+          setUser({ id: parsed.profile.id, email: parsed.email } as unknown as User);
+          setProfile(parsed.profile);
+          setDealership(parsed.dealership || null);
+        } catch {
+          // ignore
+        }
+      }
+      setIsLoading(false);
+      return;
+    }
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        fetchProfileAndDealership(session.user.id);
+      }
+      setIsLoading(false);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+      if (session?.user) {
+        fetchProfileAndDealership(session.user.id);
+      } else {
+        setProfile(null);
+        setDealership(null);
+      }
+      setIsLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, [fetchProfileAndDealership]);
+
+  const login = async (email: string, password: string) => {
+    setIsLoading(true);
+    try {
+      if (!isSupabaseConfigured()) {
+        // Fallback for preview/testing when Supabase env is not yet configured
+        let mockRole: UserRole = 'buyer';
+        if (email.toLowerCase().includes('dealer')) mockRole = 'dealer';
+        else if (email.toLowerCase().includes('admin')) mockRole = 'admin';
+
+        const mockProf: Profile = {
+          id: 'test-user-id-' + Math.random().toString(36).substring(2, 7),
+          role: mockRole,
+          full_name: email.split('@')[0],
+          phone: '+91 98765 43210',
+          district_id: 'd1111111-1111-1111-1111-111111111101', // Bengaluru Urban
+          consent_share_details: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
+        let mockDealer: Dealership | null = null;
+        if (mockRole === 'dealer') {
+          mockDealer = {
+            id: 'dl111111-1111-1111-1111-111111111101',
+            name: 'Apex Motors (Bengaluru)',
+            status: 'VERIFIED',
+            address: '45 Outer Ring Road, Marathahalli, Bengaluru',
+            district_id: 'd1111111-1111-1111-1111-111111111101',
+            contact_phone: '+91 98450 11223',
+            contact_email: email,
+            gst_number: '29AAAAA0000A1Z5',
+            brands: ['Tata Motors', 'Hyundai'],
+            districts: ['d1111111-1111-1111-1111-111111111101'],
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+        }
+
+        setMockSession(mockRole, mockProf, mockDealer || undefined);
+        setIsLoading(false);
+        return { success: true, role: mockRole };
+      }
+
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) return { success: false, error: error.message };
+
+      if (data.user) {
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', data.user.id)
+          .single();
+
+        await fetchProfileAndDealership(data.user.id);
+        return { success: true, role: (prof?.role as UserRole) || 'buyer' };
+      }
+      return { success: false, error: 'Login failed' };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Login failed';
+      return { success: false, error: msg };
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const registerBuyer = async (data: BuyerRegistrationData) => {
+    setIsLoading(true);
+    try {
+      if (!isSupabaseConfigured()) {
+        const mockProf: Profile = {
+          id: 'mock-buyer-' + Math.random().toString(36).substring(2, 7),
+          role: 'buyer',
+          full_name: data.fullName,
+          phone: data.phone,
+          district_id: data.districtId,
+          consent_share_details: data.consentShareDetails,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        setMockSession('buyer', mockProf);
+        return { success: true };
+      }
+
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: data.email,
+        password: data.password,
+      });
+
+      if (authError) return { success: false, error: authError.message };
+      if (!authData.user) return { success: false, error: 'User creation failed' };
+
+      // Insert profile
+      const { error: profileError } = await supabase.from('profiles').insert({
+        id: authData.user.id,
+        role: 'buyer',
+        full_name: data.fullName,
+        phone: data.phone,
+        district_id: data.districtId,
+        consent_share_details: data.consentShareDetails,
+      });
+
+      if (profileError) return { success: false, error: profileError.message };
+
+      await fetchProfileAndDealership(authData.user.id);
+      return { success: true };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Registration failed';
+      return { success: false, error: msg };
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const registerDealer = async (data: DealerRegistrationData) => {
+    setIsLoading(true);
+    try {
+      if (!isSupabaseConfigured()) {
+        const mockDealer: Dealership = {
+          id: 'dl-mock-' + Math.random().toString(36).substring(2, 7),
+          name: data.dealershipName,
+          status: 'PENDING',
+          address: data.address,
+          district_id: data.districtId,
+          contact_phone: data.phone,
+          contact_email: data.email,
+          gst_number: data.gstNumber,
+          brands: data.brands,
+          districts: [data.districtId],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
+        const mockProf: Profile = {
+          id: 'mock-dealer-' + Math.random().toString(36).substring(2, 7),
+          role: 'dealer',
+          full_name: data.ownerName,
+          phone: data.phone,
+          district_id: data.districtId,
+          consent_share_details: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+
+        setMockSession('dealer', mockProf, mockDealer);
+        return { success: true };
+      }
+
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: data.email,
+        password: data.password,
+      });
+
+      if (authError) return { success: false, error: authError.message };
+      if (!authData.user) return { success: false, error: 'Dealer account creation failed' };
+
+      // 1. Insert profile as dealer
+      const { error: profError } = await supabase.from('profiles').insert({
+        id: authData.user.id,
+        role: 'dealer',
+        full_name: data.ownerName,
+        phone: data.phone,
+        district_id: data.districtId,
+        consent_share_details: true,
+      });
+      if (profError) return { success: false, error: profError.message };
+
+      // 2. Insert dealership (status = PENDING)
+      const { data: dealerRow, error: dealerError } = await supabase
+        .from('dealerships')
+        .insert({
+          name: data.dealershipName,
+          status: 'PENDING',
+          address: data.address,
+          district_id: data.districtId,
+          contact_phone: data.phone,
+          contact_email: data.email,
+          gst_number: data.gstNumber,
+          brands: data.brands,
+          districts: [data.districtId],
+        })
+        .select()
+        .single();
+
+      if (dealerError) return { success: false, error: dealerError.message };
+
+      // 3. Link owner in dealer_users
+      const { error: duError } = await supabase.from('dealer_users').insert({
+        dealership_id: dealerRow.id,
+        user_id: authData.user.id,
+        role: 'owner',
+      });
+      if (duError) return { success: false, error: duError.message };
+
+      await fetchProfileAndDealership(authData.user.id);
+      return { success: true };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Dealer registration failed';
+      return { success: false, error: msg };
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const logout = async () => {
+    localStorage.removeItem('autogroup_mock_session');
+    if (isSupabaseConfigured()) {
+      await supabase.auth.signOut();
+    }
+    setUser(null);
+    setProfile(null);
+    setDealership(null);
+  };
+
+  const refreshProfile = async () => {
+    if (user) {
+      await fetchProfileAndDealership(user.id);
+    }
+  };
+
+  const setMockSession = (
+    role: UserRole,
+    profileData?: Partial<Profile>,
+    dealershipData?: Partial<Dealership>
+  ) => {
+    const mockUser = {
+      id: profileData?.id || 'mock-' + role + '-id',
+      email: (role === 'dealer' ? 'dealer' : 'buyer') + '@example.com',
+    } as unknown as User;
+
+    const mockProf: Profile = {
+      id: mockUser.id,
+      role,
+      full_name: profileData?.full_name || (role === 'dealer' ? 'Dealer Partner' : 'Car Buyer'),
+      phone: profileData?.phone || '+91 98765 43210',
+      district_id: profileData?.district_id || 'd1111111-1111-1111-1111-111111111101',
+      consent_share_details: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      ...profileData,
+    };
+
+    let mockDealer: Dealership | null = null;
+    if (role === 'dealer') {
+      mockDealer = {
+        id: 'dl111111-1111-1111-1111-111111111101',
+        name: 'Apex Motors (Bengaluru)',
+        status: 'VERIFIED',
+        address: '45 Outer Ring Road, Marathahalli, Bengaluru',
+        district_id: 'd1111111-1111-1111-1111-111111111101',
+        contact_phone: '+91 98450 11223',
+        contact_email: 'dealer@example.com',
+        gst_number: '29AAAAA0000A1Z5',
+        brands: ['Tata Motors', 'Hyundai'],
+        districts: ['d1111111-1111-1111-1111-111111111101'],
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        ...dealershipData,
+      };
+    }
+
+    setUser(mockUser);
+    setProfile(mockProf);
+    setDealership(mockDealer);
+
+    localStorage.setItem(
+      'autogroup_mock_session',
+      JSON.stringify({
+        email: mockUser.email,
+        profile: mockProf,
+        dealership: mockDealer,
+      })
+    );
+  };
+
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        profile,
+        dealership,
+        role: profile?.role ?? null,
+        isLoading,
+        login,
+        registerBuyer,
+        registerDealer,
+        logout,
+        refreshProfile,
+        setMockSession,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider');
+  }
+  return context;
+}
