@@ -63,7 +63,7 @@
   - Responsive footer with regulatory disclaimers
   - Verify build & commit: `add public preview landing and car detail pages`
 
-- [ ] **Task 8**: Buyer Preferences, Wishlist & Group Discovery
+- [x] **Task 8**: Buyer Preferences, Wishlist & Group Discovery
   - Buyer Preferences (preferred fuel, transmission, district, budget range)
   - Wishlist management (save/remove variants)
   - Find Groups page: filtered to buyer's district, same-variant matching, status badges
