@@ -24,6 +24,9 @@ import { ProfilePrivacyPage } from '@/pages/buyer/ProfilePrivacyPage';
 import { WishlistPage } from '@/pages/buyer/WishlistPage';
 import { BuyerPreferencesPage } from '@/pages/buyer/BuyerPreferencesPage';
 import { DealerDashboardPage } from '@/pages/dealer/DealerDashboardPage';
+import { DealerGroupsPage } from '@/pages/dealer/DealerGroupsPage';
+import { DealerGroupDetailPage } from '@/pages/dealer/DealerGroupDetailPage';
+import { SubmitQuotePage } from '@/pages/dealer/SubmitQuotePage';
 import { ShowroomProfilePage } from '@/pages/dealer/ShowroomProfilePage';
 import { StaffManagementPage } from '@/pages/dealer/StaffManagementPage';
 
@@ -166,6 +169,30 @@ export default function App() {
                   element={
                     <ProtectedRoute allowedRoles={['dealer']} requireVerifiedDealer>
                       <DealerDashboardPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/dealer/groups"
+                  element={
+                    <ProtectedRoute allowedRoles={['dealer']} requireVerifiedDealer>
+                      <DealerGroupsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/dealer/groups/:id"
+                  element={
+                    <ProtectedRoute allowedRoles={['dealer']} requireVerifiedDealer>
+                      <DealerGroupDetailPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/dealer/groups/:id/quote"
+                  element={
+                    <ProtectedRoute allowedRoles={['dealer']} requireVerifiedDealer>
+                      <SubmitQuotePage />
                     </ProtectedRoute>
                   }
                 />

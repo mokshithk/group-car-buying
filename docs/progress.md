@@ -118,7 +118,7 @@
   - Dealer disclaimers banner
   - Verify build & commit: `add dealer registration, profile, staff`
 
-- [ ] **Task 14**: Dealer Eligible Groups, Quote Submission & Price History
+- [x] **Task 14**: Dealer Eligible Groups, Quote Submission & Price History
   - Eligible groups list meeting visibility rule in dealer's brand & district
   - Bookings-so-far counter per group
   - Group detail dealer view: vehicle, variant, district, member count, bookings so far
