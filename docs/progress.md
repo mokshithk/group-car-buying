@@ -54,7 +54,7 @@
   - Forgot password flow
   - Verify build & commit: `add auth context, role guards and auth pages`
 
-- [ ] **Task 7**: Public Pages (Home Preview & Car Detail)
+- [x] **Task 7**: Public Pages (Home Preview & Car Detail)
   - Top navigation bar (Logo, Browse Cars, How it works, Login, Register)
   - Hero section with clear value proposition and disclaimers (no misleading savings, platform does not sell cars)
   - 4-step How It Works section
