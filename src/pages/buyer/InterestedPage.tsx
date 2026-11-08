@@ -32,7 +32,7 @@ export function InterestedPage() {
       if (!quoteId) return;
       setIsLoading(true);
 
-      const g = await fetchGroupById('g1111111-1111-1111-1111-111111111101');
+      const g = await fetchGroupById('f1111111-1111-1111-1111-111111111101');
       if (g) {
         setGroup(g);
         const quotes = await fetchQuotationsForGroup(g.id);

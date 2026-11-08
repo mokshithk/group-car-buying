@@ -44,7 +44,7 @@ test.describe('Group Car Buying Platform E2E Suite', () => {
 
   test('2. Car detail page with variants table and active groups in district', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/cars/c1111111-1111-1111-1111-111111111101');
+    await page.goto('/cars/b1111111-1111-1111-1111-111111111101');
 
     // Title and disclaimers
     await expect(page.locator('h1')).toContainText('Tata Nexon');
@@ -96,7 +96,7 @@ test.describe('Group Car Buying Platform E2E Suite', () => {
     await page.waitForURL('**/buyer/dashboard');
 
     // Group 1: 3 members -> Visible to authorized dealers
-    await page.goto('/buyer/groups/g1111111-1111-1111-1111-111111111101');
+    await page.goto('/buyer/groups/f1111111-1111-1111-1111-111111111101');
     await expect(page.locator('text=Tata Nexon').first()).toBeVisible();
     await expect(page.locator('text=Visible to Authorized Dealers')).toBeVisible();
 
@@ -105,7 +105,7 @@ test.describe('Group Car Buying Platform E2E Suite', () => {
     await page.screenshot({ path: path.join(screenshotsDir, '1440px-group-detail.png'), fullPage: false });
 
     // Group 3: 2 members, 2 days old -> Waiting gate countdown active
-    await page.goto('/buyer/groups/g1111111-1111-1111-1111-111111111103');
+    await page.goto('/buyer/groups/f1111111-1111-1111-1111-111111111103');
     await expect(page.locator('text=Dealer Visibility Waiting Gate')).toBeVisible();
     await expect(page.locator('text=automatically becomes visible to dealers in')).toBeVisible();
   });
@@ -116,7 +116,7 @@ test.describe('Group Car Buying Platform E2E Suite', () => {
     await page.click('button:has-text("Buyer Test Session")');
     await page.waitForURL('**/buyer/dashboard');
 
-    await page.goto('/buyer/groups/g1111111-1111-1111-1111-111111111101/offers');
+    await page.goto('/buyer/groups/f1111111-1111-1111-1111-111111111101/offers');
     await expect(page.locator('text=Quotation Comparison:').first()).toBeVisible();
 
     // Check that quotes exist and incomplete quote notice is displayed
@@ -133,7 +133,7 @@ test.describe('Group Car Buying Platform E2E Suite', () => {
     await page.click('button:has-text("Buyer Test Session")');
     await page.waitForURL('**/buyer/dashboard');
 
-    await page.goto('/buyer/quote/q1111111-1111-1111-1111-111111111101/interested');
+    await page.goto('/buyer/quote/fa111111-1111-1111-1111-111111111101/interested');
     await expect(page.locator('text=Interest Confirmed & Showroom Unlocked')).toBeVisible();
     await expect(page.locator('text=Important Pricing Notice: Price Is NOT Locked')).toBeVisible();
     await page.screenshot({ path: path.join(screenshotsDir, '1440px-interested-flow.png'), fullPage: false });
@@ -146,7 +146,7 @@ test.describe('Group Car Buying Platform E2E Suite', () => {
     await page.waitForURL('**/buyer/dashboard');
 
     // Go to booking payment page
-    await page.goto('/buyer/quote/q1111111-1111-1111-1111-111111111101/book');
+    await page.goto('/buyer/quote/fa111111-1111-1111-1111-111111111101/book');
     await expect(page.locator('text=Lock Quotation & Reserve Car')).toBeVisible();
     await expect(page.locator('text=SIMULATED PAYMENT GATEWAY')).toBeVisible();
     await expect(page.locator('text=Dealership Booking Deposit')).toBeVisible();
@@ -200,7 +200,7 @@ test.describe('Group Car Buying Platform E2E Suite', () => {
     await expect(page.locator('text=Bookings So Far').first()).toBeVisible();
 
     // Check Quote Submission Page
-    await page.goto('/dealer/groups/g1111111-1111-1111-1111-111111111101/quote');
+    await page.goto('/dealer/groups/f1111111-1111-1111-1111-111111111101/quote');
     await expect(page.locator('text=Submit / Revise Quotation')).toBeVisible();
     await expect(page.locator('text=Live Competitive Projection')).toBeVisible();
     await page.screenshot({ path: path.join(screenshotsDir, '1440px-dealer-submit-quote.png'), fullPage: false });

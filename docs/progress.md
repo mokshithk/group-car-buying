@@ -143,3 +143,10 @@
   - `README.md` with setup, env vars, test running, simulated features
   - Architecture overview (`docs/architecture.md`)
   - Verify build & commit: `add playwright e2e tests, responsive verification and docs`
+
+- [x] **Task 17**: Fix UUID Syntax in Seed and Codebase to Valid Hex Characters
+  - Replaced non-hex IDs in `supabase/seed.sql` with RFC 4122 compliant hex UUIDs using consistent entity prefixes (`a` manufacturers, `b` models, `c` variants, `d` districts, `e` dealerships, `f` groups, `fa` quotations)
+  - Made `supabase/seed.sql` fully re-runnable with `ON CONFLICT DO NOTHING;` on all table inserts
+  - Synchronized all fallback seed catalogs, services (`catalogData.ts`, `groupService.ts`, `quoteService.ts`, `bookingService.ts`), auth contexts, and dealer rating models
+  - Updated Playwright E2E tests and verified all 9 tests pass
+  - Verify build & commit: `fix uuid syntax in seed and codebase to use valid hex characters`

@@ -137,7 +137,7 @@ export async function executeBooking(
   };
 
   const newBooking: Booking = {
-    id: 'bk-' + Math.random().toString(36).substring(2, 9),
+    id: crypto.randomUUID(),
     booking_code: bookingCode,
     group_id: group.id,
     quotation_id: quotation.id,

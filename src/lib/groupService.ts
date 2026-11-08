@@ -18,15 +18,15 @@ function getInitialLocalGroups(): Group[] {
     }
   }
 
-  // Pre-populate initial groups mirroring seed.sql
+  // Pre-populate initial groups mirroring seed.sql (Valid hex IDs: f1111111-..., c1111111-...)
   const initial: Group[] = [
     {
-      id: 'g1111111-1111-1111-1111-111111111101',
-      variant_id: 'v1111111-1111-1111-1111-111111111102', // Nexon Creative Plus DCA
+      id: 'f1111111-1111-1111-1111-111111111101',
+      variant_id: 'c1111111-1111-1111-1111-111111111102', // Nexon Creative Plus DCA
       district_id: 'd1111111-1111-1111-1111-111111111101', // Bengaluru Urban
       target_members: 10,
       status: 'OPEN_FOR_QUOTES',
-      created_by: 'seed-user-1',
+      created_by: '11111111-1111-1111-1111-111111111101',
       created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
       updated_at: new Date().toISOString(),
       member_count: 3,
@@ -35,12 +35,12 @@ function getInitialLocalGroups(): Group[] {
       days_until_visible: 0,
     },
     {
-      id: 'g1111111-1111-1111-1111-111111111102',
-      variant_id: 'v1111111-1111-1111-1111-111111111105', // Creta SX(O) Turbo DCT
+      id: 'f1111111-1111-1111-1111-111111111102',
+      variant_id: 'c1111111-1111-1111-1111-111111111105', // Creta SX(O) Turbo DCT
       district_id: 'd1111111-1111-1111-1111-111111111101', // Bengaluru Urban
       target_members: 10,
       status: 'OPEN_FOR_QUOTES',
-      created_by: 'seed-user-2',
+      created_by: '11111111-1111-1111-1111-111111111102',
       created_at: new Date(Date.now() - 25 * 24 * 60 * 60 * 1000).toISOString(),
       updated_at: new Date().toISOString(),
       member_count: 2,
@@ -49,12 +49,12 @@ function getInitialLocalGroups(): Group[] {
       days_until_visible: 0,
     },
     {
-      id: 'g1111111-1111-1111-1111-111111111103',
-      variant_id: 'v1111111-1111-1111-1111-111111111107', // XUV700 AX5
+      id: 'f1111111-1111-1111-1111-111111111103',
+      variant_id: 'c1111111-1111-1111-1111-111111111107', // XUV700 AX5
       district_id: 'd1111111-1111-1111-1111-111111111101', // Bengaluru Urban
       target_members: 10,
       status: 'FORMING',
-      created_by: 'seed-user-3',
+      created_by: '11111111-1111-1111-1111-111111111103',
       created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
       updated_at: new Date().toISOString(),
       member_count: 2,
@@ -63,12 +63,12 @@ function getInitialLocalGroups(): Group[] {
       days_until_visible: 18,
     },
     {
-      id: 'g1111111-1111-1111-1111-111111111104',
-      variant_id: 'v1111111-1111-1111-1111-111111111110', // Virtus GT Plus
+      id: 'f1111111-1111-1111-1111-111111111104',
+      variant_id: 'c1111111-1111-1111-1111-111111111110', // Virtus GT Plus
       district_id: 'd1111111-1111-1111-1111-111111111101', // Bengaluru Urban
       target_members: 10,
       status: 'FORMING',
-      created_by: 'seed-user-4',
+      created_by: '11111111-1111-1111-1111-111111111104',
       created_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
       updated_at: new Date().toISOString(),
       member_count: 1,
@@ -104,7 +104,7 @@ export async function fetchGroupsForDistrict(districtId: string): Promise<Group[
         .select('*, variant:variants(*, model:models(*, manufacturer:manufacturers(*))), district:districts(*), group_members(id, status)')
         .eq('district_id', districtId);
 
-      if (!error && data) {
+      if (!error && data && data.length > 0) {
         return data.map((item: any) => {
           const activeCount = item.group_members?.filter((m: any) => m.status === 'ACTIVE').length || 0;
           return {
@@ -145,17 +145,17 @@ export async function fetchGroupMembers(groupId: string): Promise<GroupMember[]>
 
   const groupMembers = members.filter((m) => m.group_id === groupId && m.status === 'ACTIVE');
   if (groupMembers.length === 0) {
-    // Return sample seeded members
+    // Return sample seeded members (Valid hex IDs: fc111111-..., 11111111-...)
     return [
       {
-        id: 'gm-1',
+        id: 'fc111111-1111-1111-1111-111111111101',
         group_id: groupId,
-        user_id: 'u-1',
+        user_id: '11111111-1111-1111-1111-111111111101',
         is_creator: true,
         status: 'ACTIVE',
         joined_at: new Date(Date.now() - 4 * 24 * 60 * 60 * 1000).toISOString(),
         profile: {
-          id: 'u-1',
+          id: '11111111-1111-1111-1111-111111111101',
           role: 'buyer',
           full_name: 'Rahul Sharma',
           phone: '+91 98765 43210',
@@ -165,14 +165,14 @@ export async function fetchGroupMembers(groupId: string): Promise<GroupMember[]>
         },
       },
       {
-        id: 'gm-2',
+        id: 'fc111111-1111-1111-1111-111111111102',
         group_id: groupId,
-        user_id: 'u-2',
+        user_id: '11111111-1111-1111-1111-111111111102',
         is_creator: false,
         status: 'ACTIVE',
         joined_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
         profile: {
-          id: 'u-2',
+          id: '11111111-1111-1111-1111-111111111102',
           role: 'buyer',
           full_name: 'Ananya Verma',
           phone: '+91 98111 22334',
@@ -214,7 +214,7 @@ export async function joinGroup(
 
   // Add membership
   const newMember: GroupMember = {
-    id: 'gm-' + Math.random().toString(36).substring(2, 9),
+    id: crypto.randomUUID(),
     group_id: groupId,
     user_id: userId,
     is_creator: false,
@@ -317,7 +317,7 @@ export async function createGroup(
     };
   }
 
-  const newGroupId = 'grp-' + Math.random().toString(36).substring(2, 9);
+  const newGroupId = crypto.randomUUID();
   const newGroup: Group = {
     id: newGroupId,
     variant_id: variantId,
@@ -338,7 +338,7 @@ export async function createGroup(
 
   // Add creator as member
   const creatorMember: GroupMember = {
-    id: 'gm-' + Math.random().toString(36).substring(2, 9),
+    id: crypto.randomUUID(),
     group_id: newGroupId,
     user_id: userId,
     is_creator: true,

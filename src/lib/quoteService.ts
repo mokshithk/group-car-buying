@@ -14,12 +14,12 @@ function getInitialLocalQuotes(): Quotation[] {
     }
   }
 
-  // Seed quotations mirroring seed.sql
+  // Seed quotations mirroring seed.sql (Valid hex IDs: fa111111-..., f1111111-..., e1111111-...)
   const initial: Quotation[] = [
     {
-      id: 'q1111111-1111-1111-1111-111111111101',
-      group_id: 'g1111111-1111-1111-1111-111111111101', // Nexon group
-      dealership_id: 'dl111111-1111-1111-1111-111111111101',
+      id: 'fa111111-1111-1111-1111-111111111101',
+      group_id: 'f1111111-1111-1111-1111-111111111101', // Nexon group
+      dealership_id: 'e1111111-1111-1111-1111-111111111101',
       ex_showroom_price: 1220000,
       insurance: 44000,
       registration_charges: 183000,
@@ -32,7 +32,7 @@ function getInitialLocalQuotes(): Quotation[] {
       created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
       updated_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
       dealership: {
-        id: 'dl111111-1111-1111-1111-111111111101',
+        id: 'e1111111-1111-1111-1111-111111111101',
         name: 'Apex Motors (Bengaluru)',
         status: 'VERIFIED',
         address: '45 Outer Ring Road, Marathahalli, Bengaluru',
@@ -47,9 +47,9 @@ function getInitialLocalQuotes(): Quotation[] {
       },
     },
     {
-      id: 'q1111111-1111-1111-1111-111111111102',
-      group_id: 'g1111111-1111-1111-1111-111111111101', // Nexon group
-      dealership_id: 'dl111111-1111-1111-1111-111111111102',
+      id: 'fa111111-1111-1111-1111-111111111102',
+      group_id: 'f1111111-1111-1111-1111-111111111101', // Nexon group
+      dealership_id: 'e1111111-1111-1111-1111-111111111102',
       ex_showroom_price: 1220000,
       insurance: 42000,
       registration_charges: 183000,
@@ -62,7 +62,7 @@ function getInitialLocalQuotes(): Quotation[] {
       created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
       updated_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
       dealership: {
-        id: 'dl111111-1111-1111-1111-111111111102',
+        id: 'e1111111-1111-1111-1111-111111111102',
         name: 'Southern Star Auto (Bengaluru)',
         status: 'VERIFIED',
         address: '88 Hosur Main Road, Koramangala, Bengaluru',
@@ -77,9 +77,9 @@ function getInitialLocalQuotes(): Quotation[] {
       },
     },
     {
-      id: 'q1111111-1111-1111-1111-111111111103',
-      group_id: 'g1111111-1111-1111-1111-111111111101', // Nexon group
-      dealership_id: 'dl111111-1111-1111-1111-111111111103',
+      id: 'fa111111-1111-1111-1111-111111111103',
+      group_id: 'f1111111-1111-1111-1111-111111111101', // Nexon group
+      dealership_id: 'e1111111-1111-1111-1111-111111111103',
       ex_showroom_price: 1220000,
       insurance: 46000,
       registration_charges: 183000,
@@ -92,7 +92,7 @@ function getInitialLocalQuotes(): Quotation[] {
       created_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
       updated_at: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
       dealership: {
-        id: 'dl111111-1111-1111-1111-111111111103',
+        id: 'e1111111-1111-1111-1111-111111111103',
         name: 'Metro Velocity Cars (Bengaluru)',
         status: 'VERIFIED',
         address: '12 Bellary Road, Hebbal, Bengaluru',
@@ -107,9 +107,9 @@ function getInitialLocalQuotes(): Quotation[] {
       },
     },
     {
-      id: 'q1111111-1111-1111-1111-111111111104',
-      group_id: 'g1111111-1111-1111-1111-111111111101',
-      dealership_id: 'dl111111-1111-1111-1111-111111111104',
+      id: 'fa111111-1111-1111-1111-111111111104',
+      group_id: 'f1111111-1111-1111-1111-111111111101',
+      dealership_id: 'e1111111-1111-1111-1111-111111111104',
       ex_showroom_price: 1220000,
       insurance: 0, // Incomplete!
       registration_charges: 0, // Incomplete!
@@ -122,7 +122,7 @@ function getInitialLocalQuotes(): Quotation[] {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       dealership: {
-        id: 'dl111111-1111-1111-1111-111111111104',
+        id: 'e1111111-1111-1111-1111-111111111104',
         name: 'Pioneer Auto Hub (Bengaluru)',
         status: 'VERIFIED',
         address: '201 Bannerghatta Road, Bengaluru',
@@ -211,12 +211,12 @@ export function fetchPriceHistory(quotationId: string): QuotationVersion[] {
     }
   }
 
-  // Sample version history
+  // Sample version history (Valid hex IDs)
   return [
     {
-      id: 'qv-1',
+      id: 'fa111111-1111-1111-1111-111111110001',
       quotation_id: quotationId,
-      dealership_id: 'dl111111-1111-1111-1111-111111111101',
+      dealership_id: 'e1111111-1111-1111-1111-111111111101',
       on_road_price: 1435000,
       price_breakdown: {
         ex_showroom_price: 1220000,
@@ -229,9 +229,9 @@ export function fetchPriceHistory(quotationId: string): QuotationVersion[] {
       version_number: 1,
     },
     {
-      id: 'qv-2',
+      id: 'fa111111-1111-1111-1111-111111110002',
       quotation_id: quotationId,
-      dealership_id: 'dl111111-1111-1111-1111-111111111101',
+      dealership_id: 'e1111111-1111-1111-1111-111111111101',
       on_road_price: 1424000,
       price_breakdown: {
         ex_showroom_price: 1220000,

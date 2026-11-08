@@ -87,24 +87,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!isSupabaseConfigured()) {
-      // Check localStorage for mock session in offline/preview testing
-      const savedMock = localStorage.getItem('autogroup_mock_session');
-      if (savedMock) {
-        try {
-          const parsed = JSON.parse(savedMock);
-          setUser({ id: parsed.profile.id, email: parsed.email } as unknown as User);
-          setProfile(parsed.profile);
-          setDealership(parsed.dealership || null);
-        } catch {
-          // ignore
-        }
+    // Check localStorage for mock/test session first (used by Instant Test Session & E2E tests)
+    const savedMock = localStorage.getItem('autogroup_mock_session');
+    if (savedMock) {
+      try {
+        const parsed = JSON.parse(savedMock);
+        setUser({ id: parsed.profile.id, email: parsed.email } as unknown as User);
+        setProfile(parsed.profile);
+        setDealership(parsed.dealership || null);
+        setIsLoading(false);
+        return;
+      } catch {
+        // ignore
       }
+    }
+
+    if (!isSupabaseConfigured()) {
       setIsLoading(false);
       return;
     }
 
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (localStorage.getItem('autogroup_mock_session')) return;
       setUser(session?.user ?? null);
       if (session?.user) {
         fetchProfileAndDealership(session.user.id);
@@ -115,6 +119,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (localStorage.getItem('autogroup_mock_session')) return;
       setUser(session?.user ?? null);
       if (session?.user) {
         fetchProfileAndDealership(session.user.id);
@@ -138,7 +143,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         else if (email.toLowerCase().includes('admin')) mockRole = 'admin';
 
         const mockProf: Profile = {
-          id: 'test-user-id-' + Math.random().toString(36).substring(2, 7),
+          id: crypto.randomUUID(),
           role: mockRole,
           full_name: email.split('@')[0],
           phone: '+91 98765 43210',
@@ -151,7 +156,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         let mockDealer: Dealership | null = null;
         if (mockRole === 'dealer') {
           mockDealer = {
-            id: 'dl111111-1111-1111-1111-111111111101',
+            id: 'e1111111-1111-1111-1111-111111111101',
             name: 'Apex Motors (Bengaluru)',
             status: 'VERIFIED',
             address: '45 Outer Ring Road, Marathahalli, Bengaluru',
@@ -198,7 +203,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       if (!isSupabaseConfigured()) {
         const mockProf: Profile = {
-          id: 'mock-buyer-' + Math.random().toString(36).substring(2, 7),
+          id: crypto.randomUUID(),
           role: 'buyer',
           full_name: data.fullName,
           phone: data.phone,
@@ -246,7 +251,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       if (!isSupabaseConfigured()) {
         const mockDealer: Dealership = {
-          id: 'dl-mock-' + Math.random().toString(36).substring(2, 7),
+          id: crypto.randomUUID(),
           name: data.dealershipName,
           status: 'PENDING',
           address: data.address,
@@ -261,7 +266,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
 
         const mockProf: Profile = {
-          id: 'mock-dealer-' + Math.random().toString(36).substring(2, 7),
+          id: crypto.randomUUID(),
           role: 'dealer',
           full_name: data.ownerName,
           phone: data.phone,
@@ -353,7 +358,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     dealershipData?: Partial<Dealership>
   ) => {
     const mockUser = {
-      id: profileData?.id || 'mock-' + role + '-id',
+      id: profileData?.id || (role === 'dealer' ? '11111111-1111-1111-1111-111111111102' : '11111111-1111-1111-1111-111111111101'),
       email: (role === 'dealer' ? 'dealer' : 'buyer') + '@example.com',
     } as unknown as User;
 
@@ -372,7 +377,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let mockDealer: Dealership | null = null;
     if (role === 'dealer') {
       mockDealer = {
-        id: 'dl111111-1111-1111-1111-111111111101',
+        id: 'e1111111-1111-1111-1111-111111111101',
         name: 'Apex Motors (Bengaluru)',
         status: 'VERIFIED',
         address: '45 Outer Ring Road, Marathahalli, Bengaluru',

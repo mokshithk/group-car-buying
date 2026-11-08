@@ -78,7 +78,7 @@ export function BuyerDashboardPage() {
               Dealership quotation from <strong>Apex Motors</strong> is set to expire in 48 hours. Review the on-road price breakdown and lock your price if you wish to proceed.
             </p>
           </div>
-          <Link to="/buyer/groups/g1111111-1111-1111-1111-111111111101/offers" className="shrink-0">
+          <Link to="/buyer/groups/f1111111-1111-1111-1111-111111111101/offers" className="shrink-0">
             <Button variant="primary" size="sm" className="bg-amber-600 hover:bg-amber-700 text-xs">
               Review Quote
             </Button>

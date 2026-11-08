@@ -10,19 +10,19 @@ export function DealerRatingsReportsPage() {
 
   const [ratings, setRatings] = useState<DealerRating[]>([
     {
-      id: 'r-1',
-      booking_id: 'bk-1',
-      dealership_id: dealership?.id || 'dl-1',
-      buyer_id: 'u-1',
+      id: 'fe111111-1111-1111-1111-111111111101',
+      booking_id: 'fb111111-1111-1111-1111-111111111101',
+      dealership_id: dealership?.id || 'e1111111-1111-1111-1111-111111111101',
+      buyer_id: '11111111-1111-1111-1111-111111111101',
       rating: 5,
       review: 'Seamless delivery! Honored the exact locked quotation without any hidden charges or pushed extras.',
       created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
     },
     {
-      id: 'r-2',
-      booking_id: 'bk-2',
-      dealership_id: dealership?.id || 'dl-1',
-      buyer_id: 'u-2',
+      id: 'fe111111-1111-1111-1111-111111111102',
+      booking_id: 'fb111111-1111-1111-1111-111111111102',
+      dealership_id: dealership?.id || 'e1111111-1111-1111-1111-111111111101',
+      buyer_id: '11111111-1111-1111-1111-111111111103',
       rating: 5,
       review: 'Great group discount coordination. The showroom team was courteous and transparent.',
       created_at: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
