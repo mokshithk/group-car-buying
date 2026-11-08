@@ -137,7 +137,7 @@
   - Real-time notification feed (new eligible group, competitor price change, new lead, new booking, buyer cancellation)
   - Verify build & commit: `add dealer leads, bookings, notifications`
 
-- [ ] **Task 16**: Playwright E2E Tests, Responsive Verification & Documentation
+- [x] **Task 16**: Playwright E2E Tests, Responsive Verification & Documentation
   - Playwright test suites covering full buyer and dealer journeys, RLS isolation, visibility rule, booking, refund math
   - Viewport screenshots at 360px, 768px, 1440px
   - `README.md` with setup, env vars, test running, simulated features
