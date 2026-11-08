@@ -15,6 +15,9 @@ import { MyGroupsPage } from '@/pages/buyer/MyGroupsPage';
 import { CreateGroupPage } from '@/pages/buyer/CreateGroupPage';
 import { GroupDetailPage } from '@/pages/buyer/GroupDetailPage';
 import { OffersComparisonPage } from '@/pages/buyer/OffersComparisonPage';
+import { InterestedPage } from '@/pages/buyer/InterestedPage';
+import { BookingPaymentPage } from '@/pages/buyer/BookingPaymentPage';
+import { BookingConfirmationPage } from '@/pages/buyer/BookingConfirmationPage';
 import { WishlistPage } from '@/pages/buyer/WishlistPage';
 import { BuyerPreferencesPage } from '@/pages/buyer/BuyerPreferencesPage';
 
@@ -83,6 +86,30 @@ export default function App() {
                   element={
                     <ProtectedRoute allowedRoles={['buyer']}>
                       <OffersComparisonPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/buyer/quote/:quoteId/interested"
+                  element={
+                    <ProtectedRoute allowedRoles={['buyer']}>
+                      <InterestedPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/buyer/quote/:quoteId/book"
+                  element={
+                    <ProtectedRoute allowedRoles={['buyer']}>
+                      <BookingPaymentPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/buyer/booking-confirmation/:bookingId"
+                  element={
+                    <ProtectedRoute allowedRoles={['buyer']}>
+                      <BookingConfirmationPage />
                     </ProtectedRoute>
                   }
                 />

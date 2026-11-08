@@ -89,7 +89,7 @@
   - Printable / downloadable quote with unique verification code
   - Verify build & commit: `add buyer dashboard and offers comparison`
 
-- [ ] **Task 11**: Interested Flow & Simulated Payment with Booking
+- [x] **Task 11**: Interested Flow & Simulated Payment with Booking
   - "I'm interested" flow: reveals showroom contact & address, notifies dealer with buyer name & phone, clear notice that price is not locked
   - "Book now" flow: booking amount (₹5,000) + platform fee (₹100) breakdown (total < ₹10,000)
   - 3-function simulated payment layer (`createPayment`, `verifyPayment`, `refundPayment`)
