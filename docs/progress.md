@@ -128,7 +128,7 @@
   - Edit quote price anytime with live competitor ranking ("you are currently #2 of 4") and price history logging
   - Verify build & commit: `add dealer groups, quotes, price history`
 
-- [ ] **Task 15**: Dealer Leads, Bookings Management & Notifications
+- [x] **Task 15**: Dealer Leads, Bookings Management & Notifications
   - Leads tab: interested buyers (name, phone, quote, date) with "Mark as Contacted" toggle
   - Bookings received: locked price snapshot, code, buyer contact, status
   - Dealer-fault cancellation trigger with 100% refund confirmation

@@ -27,6 +27,10 @@ import { DealerDashboardPage } from '@/pages/dealer/DealerDashboardPage';
 import { DealerGroupsPage } from '@/pages/dealer/DealerGroupsPage';
 import { DealerGroupDetailPage } from '@/pages/dealer/DealerGroupDetailPage';
 import { SubmitQuotePage } from '@/pages/dealer/SubmitQuotePage';
+import { DealerLeadsPage } from '@/pages/dealer/DealerLeadsPage';
+import { DealerBookingsPage } from '@/pages/dealer/DealerBookingsPage';
+import { DealerRatingsReportsPage } from '@/pages/dealer/DealerRatingsReportsPage';
+import { DealerNotificationsPage } from '@/pages/dealer/DealerNotificationsPage';
 import { ShowroomProfilePage } from '@/pages/dealer/ShowroomProfilePage';
 import { StaffManagementPage } from '@/pages/dealer/StaffManagementPage';
 
@@ -163,7 +167,7 @@ export default function App() {
                   }
                 />
 
-                {/* Dealer Protected Pages (Requires Role = dealer & Status = VERIFIED) */}
+                {/* Dealer Protected Pages */}
                 <Route
                   path="/dealer/dashboard"
                   element={
@@ -193,6 +197,38 @@ export default function App() {
                   element={
                     <ProtectedRoute allowedRoles={['dealer']} requireVerifiedDealer>
                       <SubmitQuotePage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/dealer/leads"
+                  element={
+                    <ProtectedRoute allowedRoles={['dealer']} requireVerifiedDealer>
+                      <DealerLeadsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/dealer/bookings"
+                  element={
+                    <ProtectedRoute allowedRoles={['dealer']} requireVerifiedDealer>
+                      <DealerBookingsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/dealer/ratings"
+                  element={
+                    <ProtectedRoute allowedRoles={['dealer']}>
+                      <DealerRatingsReportsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/dealer/notifications"
+                  element={
+                    <ProtectedRoute allowedRoles={['dealer']}>
+                      <DealerNotificationsPage />
                     </ProtectedRoute>
                   }
                 />
