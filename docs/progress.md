@@ -36,7 +36,7 @@
   - Triggers: price change versioning, bookings-so-far counter, notification dispatch
   - Verify build & commit: `add schema migrations for core tables and business rules`
 
-- [ ] **Task 5**: RLS Policies, Seed Data, RUN_ME_FIRST & Dealer Approval Snippet
+- [x] **Task 5**: RLS Policies, Seed Data, RUN_ME_FIRST & Dealer Approval Snippet
   - `supabase/migrations/002_rls_policies.sql`: strict RLS for Buyer, Dealer, and Admin
   - Dealer cannot see buyer phone/email before interest or booking
   - `supabase/seed.sql`: 15 districts, 12 real car models with 2-4 variants, 4-5 test dealerships, groups in multiple statuses, quotes (including expired and incomplete)
