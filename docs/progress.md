@@ -23,7 +23,7 @@
   - Create base UI components inspired by Uiverse/DesignLab (Button, Input, Card, Badge, Modal, Tabs, Select, Toast, Skeleton)
   - Verify build & commit: `add design tokens and base ui components`
 
-- [ ] **Task 3**: Environment Handling, Supabase Client & Shared Types
+- [x] **Task 3**: Environment Handling, Supabase Client & Shared Types
   - Create `.env.example`, blank `.env.local`
   - Implement Supabase client wrapper with type definitions for all tables, views, and functions
   - Add Indian currency formatting helper (`₹12,80,000`), date helpers, and simulated mock fallback
