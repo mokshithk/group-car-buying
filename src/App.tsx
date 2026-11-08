@@ -23,6 +23,9 @@ import { NotificationsPage } from '@/pages/buyer/NotificationsPage';
 import { ProfilePrivacyPage } from '@/pages/buyer/ProfilePrivacyPage';
 import { WishlistPage } from '@/pages/buyer/WishlistPage';
 import { BuyerPreferencesPage } from '@/pages/buyer/BuyerPreferencesPage';
+import { DealerDashboardPage } from '@/pages/dealer/DealerDashboardPage';
+import { ShowroomProfilePage } from '@/pages/dealer/ShowroomProfilePage';
+import { StaffManagementPage } from '@/pages/dealer/StaffManagementPage';
 
 export default function App() {
   return (
@@ -153,6 +156,32 @@ export default function App() {
                   element={
                     <ProtectedRoute allowedRoles={['buyer']}>
                       <BuyerPreferencesPage />
+                    </ProtectedRoute>
+                  }
+                />
+
+                {/* Dealer Protected Pages (Requires Role = dealer & Status = VERIFIED) */}
+                <Route
+                  path="/dealer/dashboard"
+                  element={
+                    <ProtectedRoute allowedRoles={['dealer']} requireVerifiedDealer>
+                      <DealerDashboardPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/dealer/profile"
+                  element={
+                    <ProtectedRoute allowedRoles={['dealer']}>
+                      <ShowroomProfilePage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/dealer/staff"
+                  element={
+                    <ProtectedRoute allowedRoles={['dealer']}>
+                      <StaffManagementPage />
                     </ProtectedRoute>
                   }
                 />

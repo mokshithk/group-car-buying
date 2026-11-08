@@ -110,7 +110,7 @@
   - Notifications center & Profile / privacy management (consent toggle, data download, account deletion)
   - Verify build & commit: `add my bookings, cancel/refund, delivery, rating, report`
 
-- [ ] **Task 13**: Dealer Registration, Pending Screen & Showroom Management
+- [x] **Task 13**: Dealer Registration, Pending Screen & Showroom Management
   - Dealer pending approval screen (until dealership status is VERIFIED)
   - Dealer dashboard: summary cards (new eligible groups, active quotes, interested leads, bookings)
   - Showroom profile editor (brands, districts, address, GST, contact, map link)
