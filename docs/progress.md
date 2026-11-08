@@ -18,7 +18,7 @@
   - Configure `.npmrc` (`cache=D:\dev-cache\npm`), `.gitignore`, TypeScript strict mode
   - Verify build & commit: `set up vite, tailwind, router and project config`
 
-- [ ] **Task 2**: Design Tokens & Base UI Component Library
+- [x] **Task 2**: Design Tokens & Base UI Component Library
   - Implement design tokens in Tailwind configuration (fonts, colors, spacing, shadows, radius)
   - Create base UI components inspired by Uiverse/DesignLab (Button, Input, Card, Badge, Modal, Tabs, Select, Toast, Skeleton)
   - Verify build & commit: `add design tokens and base ui components`
