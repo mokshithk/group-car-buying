@@ -29,7 +29,7 @@
   - Add Indian currency formatting helper (`₹12,80,000`), date helpers, and simulated mock fallback
   - Verify build & commit: `add env handling, types and supabase client`
 
-- [ ] **Task 4**: Database Schema Migrations & Business Logic
+- [x] **Task 4**: Database Schema Migrations & Business Logic
   - `supabase/migrations/001_initial_schema.sql`: profiles, districts, cars (manufacturers, models, variants), dealerships, dealer_users, groups, group_members, quotes, quote_versions, quote_items, interests, bookings, payments, refunds, settings, notifications, ratings, reports, audit_log
   - Group visibility function/view (>= 3 members, or == 2 members after 20 days; 1 member never visible)
   - Constraints: booking amount + fee < 10,000, unique active group per buyer per variant
