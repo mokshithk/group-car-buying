@@ -18,6 +18,9 @@ import { OffersComparisonPage } from '@/pages/buyer/OffersComparisonPage';
 import { InterestedPage } from '@/pages/buyer/InterestedPage';
 import { BookingPaymentPage } from '@/pages/buyer/BookingPaymentPage';
 import { BookingConfirmationPage } from '@/pages/buyer/BookingConfirmationPage';
+import { MyBookingsPage } from '@/pages/buyer/MyBookingsPage';
+import { NotificationsPage } from '@/pages/buyer/NotificationsPage';
+import { ProfilePrivacyPage } from '@/pages/buyer/ProfilePrivacyPage';
 import { WishlistPage } from '@/pages/buyer/WishlistPage';
 import { BuyerPreferencesPage } from '@/pages/buyer/BuyerPreferencesPage';
 
@@ -110,6 +113,30 @@ export default function App() {
                   element={
                     <ProtectedRoute allowedRoles={['buyer']}>
                       <BookingConfirmationPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/buyer/bookings"
+                  element={
+                    <ProtectedRoute allowedRoles={['buyer']}>
+                      <MyBookingsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/buyer/notifications"
+                  element={
+                    <ProtectedRoute allowedRoles={['buyer']}>
+                      <NotificationsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/buyer/profile"
+                  element={
+                    <ProtectedRoute allowedRoles={['buyer']}>
+                      <ProfilePrivacyPage />
                     </ProtectedRoute>
                   }
                 />

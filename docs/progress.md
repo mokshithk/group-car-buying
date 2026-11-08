@@ -100,7 +100,7 @@
   - Idempotent click handling & unique constraint prevention
   - Verify build & commit: `add interested flow and simulated payment with booking`
 
-- [ ] **Task 12**: My Bookings, Cancellation Preview, Delivery & Reviews
+- [x] **Task 12**: My Bookings, Cancellation Preview, Delivery & Reviews
   - My Bookings page: active bookings, locked price snapshot, unique code
   - Cancellation & switch comparison preview: real cost of cancelling (5% retained on buyer cancellation, platform fee non-refundable vs dealer price difference)
   - Dealer-fault cancellation (100% booking amount + fee refund)
