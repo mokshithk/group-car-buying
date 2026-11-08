@@ -79,7 +79,7 @@
   - Expired/Cancelled group view with "Find similar group" and "Create new group"
   - Verify build & commit: `add group creation, group detail and invite link`
 
-- [ ] **Task 10**: Buyer Dashboard & Quotation Comparison
+- [x] **Task 10**: Buyer Dashboard & Quotation Comparison
   - Buyer dashboard: active groups summary, status-based action items, expiring quote alerts, activity feed
   - Quotations comparison table (desktop table / mobile swipeable card view)
   - Dealer showroom names displayed

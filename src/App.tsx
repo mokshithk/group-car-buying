@@ -9,10 +9,12 @@ import { BuyerRegisterPage } from '@/pages/auth/BuyerRegisterPage';
 import { DealerRegisterPage } from '@/pages/auth/DealerRegisterPage';
 import { ForgotPasswordPage } from '@/pages/auth/ForgotPasswordPage';
 import { PendingApprovalPage } from '@/pages/dealer/PendingApprovalPage';
+import { BuyerDashboardPage } from '@/pages/buyer/BuyerDashboardPage';
 import { FindGroupsPage } from '@/pages/buyer/FindGroupsPage';
 import { MyGroupsPage } from '@/pages/buyer/MyGroupsPage';
 import { CreateGroupPage } from '@/pages/buyer/CreateGroupPage';
 import { GroupDetailPage } from '@/pages/buyer/GroupDetailPage';
+import { OffersComparisonPage } from '@/pages/buyer/OffersComparisonPage';
 import { WishlistPage } from '@/pages/buyer/WishlistPage';
 import { BuyerPreferencesPage } from '@/pages/buyer/BuyerPreferencesPage';
 
@@ -36,6 +38,14 @@ export default function App() {
                 <Route path="/dealer/pending-approval" element={<PendingApprovalPage />} />
 
                 {/* Buyer Protected Pages */}
+                <Route
+                  path="/buyer/dashboard"
+                  element={
+                    <ProtectedRoute allowedRoles={['buyer']}>
+                      <BuyerDashboardPage />
+                    </ProtectedRoute>
+                  }
+                />
                 <Route
                   path="/buyer/groups/find"
                   element={
@@ -65,6 +75,14 @@ export default function App() {
                   element={
                     <ProtectedRoute allowedRoles={['buyer']}>
                       <GroupDetailPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/buyer/groups/:id/offers"
+                  element={
+                    <ProtectedRoute allowedRoles={['buyer']}>
+                      <OffersComparisonPage />
                     </ProtectedRoute>
                   }
                 />
