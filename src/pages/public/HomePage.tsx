@@ -35,6 +35,24 @@ export function HomePage() {
       });
   }, []);
 
+  useEffect(() => {
+    const handleHashScroll = () => {
+      const hash = window.location.hash.replace('#', '');
+      if (hash) {
+        setTimeout(() => {
+          const el = document.getElementById(hash);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth' });
+          }
+        }, 120);
+      }
+    };
+
+    handleHashScroll();
+    window.addEventListener('hashchange', handleHashScroll);
+    return () => window.removeEventListener('hashchange', handleHashScroll);
+  }, []);
+
   const filteredModels = useMemo(() => {
     return models.filter((model) => {
       // Search text match
@@ -86,12 +104,24 @@ export function HomePage() {
 
               {/* CTAs */}
               <div className="flex flex-col sm:flex-row items-center justify-center gap-3.5 pt-2">
-                <a href="#cars">
+                <a
+                  href="#cars"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    document.getElementById('cars')?.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                >
                   <Button variant="primary" size="lg" rightIcon={<ArrowRight className="w-4 h-4" />}>
                     Browse Eligible Cars & Groups
                   </Button>
                 </a>
-                <a href="#how-it-works">
+                <a
+                  href="#how-it-works"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    document.getElementById('how-it-works')?.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                >
                   <Button variant="secondary" size="lg">
                     How Group Buying Works
                   </Button>

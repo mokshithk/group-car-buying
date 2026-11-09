@@ -178,31 +178,39 @@ export function CreateGroupPage() {
               />
 
               {/* Variant summary box */}
-              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-500">Indicative Ex-Showroom:</span>
-                  <span className="font-bold text-slate-900 text-sm">
-                    {formatINR(selectedVariant.ex_showroom_price)}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-500">Powertrain:</span>
-                  <span className="text-slate-700 font-medium">
-                    {selectedVariant.fuel_type} · {selectedVariant.transmission}
-                  </span>
-                </div>
-                <div className="pt-2 border-t border-slate-200/60 flex flex-wrap gap-1">
-                  {selectedVariant.features.map((f) => (
-                    <span
-                      key={f}
-                      className="inline-flex items-center gap-1 text-[10px] bg-white border border-slate-200 px-2 py-0.5 rounded text-slate-600"
-                    >
-                      <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                      {f}
+              {selectedVariant ? (
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500">Indicative Ex-Showroom:</span>
+                    <span className="font-bold text-slate-900 text-sm">
+                      {formatINR(selectedVariant.ex_showroom_price)}
                     </span>
-                  ))}
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-500">Powertrain:</span>
+                    <span className="text-slate-700 font-medium">
+                      {selectedVariant.fuel_type || 'Petrol'} · {selectedVariant.transmission || 'Manual'}
+                    </span>
+                  </div>
+                  {Array.isArray(selectedVariant.features) && selectedVariant.features.length > 0 && (
+                    <div className="pt-2 border-t border-slate-200/60 flex flex-wrap gap-1">
+                      {selectedVariant.features.map((f) => (
+                        <span
+                          key={f}
+                          className="inline-flex items-center gap-1 text-[10px] bg-white border border-slate-200 px-2 py-0.5 rounded text-slate-600"
+                        >
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          {f}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              </div>
+              ) : (
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-500 text-center">
+                  Select a variant above to inspect pricing and specifications.
+                </div>
+              )}
             </CardContent>
           </Card>
 
@@ -220,7 +228,7 @@ export function CreateGroupPage() {
                   1
                 </div>
                 <div>
-                  <strong>Dealer Visibility Gate:</strong> Your group becomes visible to authorized dealerships in <strong>{selectedDistrict.name}</strong> as soon as it reaches <strong>3 members</strong> (or after 20 days with 2 members).
+                  <strong>Dealer Visibility Gate:</strong> Your group becomes visible to authorized dealerships in <strong>{selectedDistrict?.name || 'Selected District'}</strong> as soon as it reaches <strong>3 members</strong> (or after 20 days with 2 members).
                 </div>
               </div>
 
@@ -250,9 +258,10 @@ export function CreateGroupPage() {
             size="lg"
             className="w-full font-semibold"
             isLoading={isLoading}
+            disabled={!selectedVariant || !districtId}
             leftIcon={<Users className="w-4 h-4" />}
           >
-            Create Group in {selectedDistrict.name}
+            Create Group in {selectedDistrict?.name || 'Selected District'}
           </Button>
         </form>
       </div>

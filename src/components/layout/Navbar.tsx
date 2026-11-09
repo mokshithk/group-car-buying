@@ -15,6 +15,18 @@ export function Navbar() {
     navigate('/', { replace: true });
   };
 
+  const scrollToSection = (sectionId: string) => {
+    setMobileMenuOpen(false);
+    if (location.pathname === '/') {
+      const el = document.getElementById(sectionId);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth' });
+      }
+    } else {
+      navigate(`/#${sectionId}`);
+    }
+  };
+
   return (
     <header className="sticky top-0 z-40 w-full border-b border-slate-200/80 bg-white/90 backdrop-blur-md">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -30,18 +42,26 @@ export function Navbar() {
 
         {/* Desktop Navigation Links */}
         <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-600">
-          <Link
-            to="/#cars"
-            className="hover:text-brand-600 transition-colors"
+          <a
+            href="#cars"
+            onClick={(e) => {
+              e.preventDefault();
+              scrollToSection('cars');
+            }}
+            className="hover:text-brand-600 transition-colors cursor-pointer"
           >
             Browse Cars
-          </Link>
-          <Link
-            to="/#how-it-works"
-            className="hover:text-brand-600 transition-colors"
+          </a>
+          <a
+            href="#how-it-works"
+            onClick={(e) => {
+              e.preventDefault();
+              scrollToSection('how-it-works');
+            }}
+            className="hover:text-brand-600 transition-colors cursor-pointer"
           >
             How It Works
-          </Link>
+          </a>
           {profile?.role === 'buyer' && (
             <>
               <Link
@@ -131,20 +151,26 @@ export function Navbar() {
       {/* Mobile Drawer Menu */}
       {mobileMenuOpen && (
         <div className="md:hidden border-t border-slate-200 bg-white px-4 pt-3 pb-6 space-y-3 shadow-lg">
-          <Link
-            to="/#cars"
-            onClick={() => setMobileMenuOpen(false)}
-            className="block py-2 text-sm font-medium text-slate-700 hover:text-brand-600"
+          <a
+            href="#cars"
+            onClick={(e) => {
+              e.preventDefault();
+              scrollToSection('cars');
+            }}
+            className="block py-2 text-sm font-medium text-slate-700 hover:text-brand-600 cursor-pointer"
           >
             Browse Cars
-          </Link>
-          <Link
-            to="/#how-it-works"
-            onClick={() => setMobileMenuOpen(false)}
-            className="block py-2 text-sm font-medium text-slate-700 hover:text-brand-600"
+          </a>
+          <a
+            href="#how-it-works"
+            onClick={(e) => {
+              e.preventDefault();
+              scrollToSection('how-it-works');
+            }}
+            className="block py-2 text-sm font-medium text-slate-700 hover:text-brand-600 cursor-pointer"
           >
             How It Works
-          </Link>
+          </a>
           {profile?.role === 'buyer' && (
             <>
               <Link

@@ -28,8 +28,18 @@ export function FindGroupsPage() {
 
   const [districts, setDistricts] = useState<District[]>([]);
   const buyerDistrictId = profile?.district_id || 'd1111111-1111-1111-1111-111111111101';
+  const [selectedDistrictId, setSelectedDistrictId] = useState<string>(buyerDistrictId);
+
+  useEffect(() => {
+    if (profile?.district_id) {
+      setSelectedDistrictId(profile.district_id);
+    }
+  }, [profile?.district_id]);
+
   const currentDistrict =
-    districts.find((d) => d.id === buyerDistrictId) || districts[0] || { id: buyerDistrictId, name: 'Your District', state: '' };
+    districts.find((d) => d.id === selectedDistrictId) ||
+    districts[0] ||
+    { id: selectedDistrictId, name: 'Selected District', state: '' };
 
   const [groups, setGroups] = useState<Group[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -46,9 +56,10 @@ export function FindGroupsPage() {
 
   useEffect(() => {
     async function load() {
+      if (!selectedDistrictId) return;
       setIsLoading(true);
       try {
-        const data = await fetchGroupsForDistrict(buyerDistrictId);
+        const data = await fetchGroupsForDistrict(selectedDistrictId);
         if (filterVariantId) {
           setGroups(data.filter((g) => g.variant_id === filterVariantId));
         } else {
@@ -60,7 +71,7 @@ export function FindGroupsPage() {
       setIsLoading(false);
     }
     load();
-  }, [buyerDistrictId, filterVariantId]);
+  }, [selectedDistrictId, filterVariantId]);
 
   const handleConfirmJoin = async () => {
     if (!selectedGroupToJoin || !user || !profile) return;
@@ -99,16 +110,32 @@ export function FindGroupsPage() {
               </h1>
             </div>
             <p className="text-xs text-slate-500 mt-1">
-              Active tenders restricted to your registered district:{' '}
-              <strong className="text-slate-800">{currentDistrict.name} ({currentDistrict.state})</strong>
+              Active tenders in: <strong className="text-slate-800">{currentDistrict.name} ({currentDistrict.state})</strong>
             </p>
           </div>
 
-          <Link to="/buyer/groups/create">
-            <Button variant="primary" size="sm" leftIcon={<PlusCircle className="w-4 h-4" />}>
-              Create New Group
-            </Button>
-          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 font-medium">District:</span>
+              <select
+                value={selectedDistrictId}
+                onChange={(e) => setSelectedDistrictId(e.target.value)}
+                className="text-xs font-semibold px-3 py-2 bg-white border border-slate-200 rounded-xl text-slate-800 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-sm"
+              >
+                {districts.map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.name} ({d.state})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <Link to="/buyer/groups/create">
+              <Button variant="primary" size="sm" leftIcon={<PlusCircle className="w-4 h-4" />}>
+                Create New Group
+              </Button>
+            </Link>
+          </div>
         </div>
 
         {/* Group Listing */}
@@ -123,11 +150,22 @@ export function FindGroupsPage() {
             <p className="text-xs text-slate-500 max-w-md mx-auto mt-1 mb-6">
               Be the first to start a group for your desired car model and invite friends or local buyers to join.
             </p>
-            <Link to="/buyer/groups/create">
-              <Button variant="primary" size="md" leftIcon={<PlusCircle className="w-4 h-4" />}>
-                Start a New Group Now
-              </Button>
-            </Link>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <Link to="/buyer/groups/create">
+                <Button variant="primary" size="md" leftIcon={<PlusCircle className="w-4 h-4" />}>
+                  Start a New Group in {currentDistrict.name}
+                </Button>
+              </Link>
+              {selectedDistrictId !== 'd1111111-1111-1111-1111-111111111101' && (
+                <Button
+                  variant="secondary"
+                  size="md"
+                  onClick={() => setSelectedDistrictId('d1111111-1111-1111-1111-111111111101')}
+                >
+                  View Bengaluru Urban Groups
+                </Button>
+              )}
+            </div>
           </Card>
         ) : (
           <div className="grid grid-cols-1 gap-4">

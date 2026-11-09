@@ -40,6 +40,7 @@ import { AdminDealersPage } from '@/pages/admin/AdminDealersPage';
 
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { SupabaseErrorScreen } from '@/components/common/SupabaseErrorScreen';
+import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 
 export default function App() {
   if (!isSupabaseConfigured()) {
@@ -47,12 +48,13 @@ export default function App() {
   }
 
   return (
-    <AuthProvider>
-      <ToastProvider>
-        <BrowserRouter>
-          <div className="min-h-screen flex flex-col bg-surface-canvas">
-            <main className="flex-1">
-              <Routes>
+    <ErrorBoundary>
+      <AuthProvider>
+        <ToastProvider>
+          <BrowserRouter>
+            <div className="min-h-screen flex flex-col bg-surface-canvas">
+              <main className="flex-1">
+                <Routes>
                 {/* Public Pages */}
                 <Route path="/" element={<HomePage />} />
                 <Route path="/cars/:id" element={<CarDetailPage />} />
@@ -282,5 +284,6 @@ export default function App() {
         </BrowserRouter>
       </ToastProvider>
     </AuthProvider>
+  </ErrorBoundary>
   );
 }
