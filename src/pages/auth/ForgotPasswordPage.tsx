@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Button, Input, Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui';
-import { Car, Mail, Lock, ArrowLeft, CheckCircle2, ShieldCheck, Eye, EyeOff, KeyRound } from 'lucide-react';
+import { Car, Mail, Lock, ArrowLeft, CheckCircle2, ShieldCheck, Eye, EyeOff, KeyRound, AlertCircle, UserPlus } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { OtpVerification } from '@/components/auth/OtpVerification';
 
@@ -13,6 +13,8 @@ export function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [isNotRegistered, setIsNotRegistered] = useState(false);
+  const [requestTimestamps, setRequestTimestamps] = useState<number[]>([]);
 
   // Password reset fields
   const [newPassword, setNewPassword] = useState('');
@@ -20,15 +22,16 @@ export function ForgotPasswordPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
 
-  // Password strength checks
+  // Password strength checks (Section G.4)
   const hasMinLength = newPassword.length >= 8;
   const hasLetterAndNumber = /[a-zA-Z]/.test(newPassword) && /[0-9!@#$%^&*(),.?":{}|<>]/.test(newPassword);
   const passwordsMatch = newPassword.length > 0 && newPassword === confirmPassword;
 
-  // Step 1: Submit email to request recovery OTP
+  // Step 1: Submit email to request recovery OTP (Section G.1 - G.3)
   const handleRequestOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setIsNotRegistered(false);
 
     const cleanEmail = email.trim().toLowerCase();
     if (!cleanEmail || !cleanEmail.includes('@')) {
@@ -36,13 +39,34 @@ export function ForgotPasswordPage() {
       return;
     }
 
+    // Client-side rate throttle: max 5 requests per minute (Section G.5)
+    const now = Date.now();
+    const recentRequests = requestTimestamps.filter((t) => now - t < 60000);
+    if (recentRequests.length >= 5) {
+      setError('Too many reset requests. Please wait a minute before requesting another code.');
+      return;
+    }
+    setRequestTimestamps([...recentRequests, now]);
+
     setIsLoading(true);
 
     try {
+      // 1. Check if email is registered using SECURITY DEFINER function (Section G.1 & G.2)
+      const { data: isReg, error: rpcErr } = await supabase.rpc('is_email_registered', {
+        p_email: cleanEmail,
+      });
+
+      if (!rpcErr && isReg === false) {
+        setIsNotRegistered(true);
+        setError('This email is not registered. Please check the address or create an account.');
+        setIsLoading(false);
+        return;
+      }
+
+      // 2. Dispatch recovery code via Supabase Auth
       const { error: resetErr } = await supabase.auth.resetPasswordForEmail(cleanEmail);
 
       if (resetErr) {
-        // If rate limited or network failure, surface friendly error
         const msg = resetErr.message.toLowerCase();
         if (msg.includes('rate limit')) {
           setError('Too many requests. Please wait a few moments before requesting another code.');
@@ -51,7 +75,7 @@ export function ForgotPasswordPage() {
         }
       }
 
-      // Neutral enumeration protection: advance to OTP verification step
+      // Advance to OTP verification step
       setStep('otp');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unable to dispatch recovery code.';
@@ -61,7 +85,7 @@ export function ForgotPasswordPage() {
     }
   };
 
-  // Step 3: Update password after OTP verified session established
+  // Step 3: Update password after OTP verified session established (Section G.4)
   const handleUpdatePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -89,7 +113,7 @@ export function ForgotPasswordPage() {
         return;
       }
 
-      // Sign out of recovery session to require clean login with new password
+      // Sign out of recovery session to require clean login with new password (Section G.4)
       await supabase.auth.signOut();
       setStep('success');
     } catch (err: unknown) {
@@ -100,7 +124,7 @@ export function ForgotPasswordPage() {
     }
   };
 
-  // STEP 2: Render OTP verification component
+  // STEP 2: Render OTP verification component (Section G.3 & G.4)
   if (step === 'otp') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-surface-canvas px-4 py-12">
@@ -120,7 +144,7 @@ export function ForgotPasswordPage() {
             email={email}
             type="recovery"
             title="Verify Recovery Code"
-            description={`If an account is registered with ${email}, a 6-digit recovery code has been dispatched.`}
+            description={`We sent a 6-digit recovery code to ${email}`}
             onSuccess={() => {
               setStep('new-password');
             }}
@@ -133,7 +157,8 @@ export function ForgotPasswordPage() {
     );
   }
 
-  // STEP 3: Render Set New Password component
+  // STEP 3: Render Set New Password component (Section G.4)
+  // Guarded: reachable ONLY after successful recovery OTP
   if (step === 'new-password') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-surface-canvas px-4 py-12">
@@ -177,6 +202,7 @@ export function ForgotPasswordPage() {
                     type={showPassword ? 'text' : 'password'}
                     placeholder="Enter at least 8 characters"
                     required
+                    minLength={8}
                     value={newPassword}
                     onChange={(e) => setNewPassword(e.target.value)}
                     leftIcon={<Lock className="w-4 h-4" />}
@@ -199,6 +225,7 @@ export function ForgotPasswordPage() {
                     type={showPassword ? 'text' : 'password'}
                     placeholder="Confirm new password"
                     required
+                    minLength={8}
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     leftIcon={<Lock className="w-4 h-4" />}
@@ -239,7 +266,7 @@ export function ForgotPasswordPage() {
     );
   }
 
-  // STEP 4: Render Success confirmation
+  // STEP 4: Render Success confirmation (Section G.4)
   if (step === 'success') {
     return (
       <div className="min-h-screen flex items-center justify-center bg-surface-canvas px-4 py-12">
@@ -279,7 +306,7 @@ export function ForgotPasswordPage() {
     );
   }
 
-  // STEP 1: Request OTP by entering Email
+  // STEP 1: Request OTP by entering Email (Section G.1 - G.3)
   return (
     <div className="min-h-screen flex items-center justify-center bg-surface-canvas px-4 py-12">
       <div className="w-full max-w-md">
@@ -294,7 +321,7 @@ export function ForgotPasswordPage() {
           </Link>
           <h2 className="mt-4 text-xl font-bold text-slate-900">Reset Your Password</h2>
           <p className="mt-1 text-sm text-slate-500">
-            Enter your registered email to receive a 6-digit verification code
+            Enter your registered email to receive a 6-digit recovery code
           </p>
         </div>
 
@@ -308,17 +335,35 @@ export function ForgotPasswordPage() {
           <CardContent>
             <form onSubmit={handleRequestOtp} className="space-y-4">
               {error && (
-                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-medium text-rose-700">
-                  {error}
+                <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs font-medium text-rose-700 space-y-2">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
+                    <span className="leading-relaxed">{error}</span>
+                  </div>
+
+                  {isNotRegistered && (
+                    <div className="pt-1 border-t border-rose-200/60">
+                      <Link
+                        to="/register"
+                        className="inline-flex items-center gap-1.5 font-bold text-brand-700 hover:text-brand-800 underline"
+                      >
+                        <UserPlus className="w-3.5 h-3.5" /> Create an account here
+                      </Link>
+                    </div>
+                  )}
                 </div>
               )}
+
               <Input
                 label="Registered Email Address"
                 type="email"
                 placeholder="name@domain.com"
                 required
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setIsNotRegistered(false);
+                }}
                 leftIcon={<Mail className="w-4 h-4" />}
                 helperText="We will never share your email address."
               />
