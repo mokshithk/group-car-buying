@@ -23,14 +23,30 @@ export function LoginPage() {
     setIsLoading(false);
 
     if (res.success) {
-      if (res.role === 'dealer') {
-        const isPending = res.dealershipStatus === 'PENDING';
-        if (isPending) {
-          navigate('/dealer/pending-approval', { replace: true });
-        } else if (redirectUrl && redirectUrl.startsWith('/dealer') && !redirectUrl.includes('pending')) {
+      if (res.role === 'admin') {
+        if (redirectUrl && redirectUrl.startsWith('/admin')) {
           navigate(redirectUrl, { replace: true });
         } else {
-          navigate('/dealer/dashboard', { replace: true });
+          navigate('/admin/dealers', { replace: true });
+        }
+      } else if (res.role === 'dealer') {
+        const dStatus = res.dealershipStatus;
+        if (dStatus === 'REJECTED' || dStatus === 'SUSPENDED') {
+          navigate('/dealer/status', { replace: true });
+        } else if (dStatus === 'PENDING') {
+          navigate('/dealer/pending', { replace: true });
+        } else {
+          // VERIFIED dealer
+          if (
+            redirectUrl &&
+            redirectUrl.startsWith('/dealer') &&
+            !redirectUrl.includes('pending') &&
+            !redirectUrl.includes('status')
+          ) {
+            navigate(redirectUrl, { replace: true });
+          } else {
+            navigate('/dealer/dashboard', { replace: true });
+          }
         }
       } else if (res.role === 'buyer') {
         if (redirectUrl && redirectUrl.startsWith('/buyer')) {

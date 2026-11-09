@@ -11,6 +11,7 @@ import { DealerRegisterPage } from '@/pages/auth/DealerRegisterPage';
 import { VerifyOtpPage } from '@/pages/auth/VerifyOtpPage';
 import { ForgotPasswordPage } from '@/pages/auth/ForgotPasswordPage';
 import { PendingApprovalPage } from '@/pages/dealer/PendingApprovalPage';
+import { DealerStatusPage } from '@/pages/dealer/DealerStatusPage';
 import { BuyerDashboardPage } from '@/pages/buyer/BuyerDashboardPage';
 import { FindGroupsPage } from '@/pages/buyer/FindGroupsPage';
 import { MyGroupsPage } from '@/pages/buyer/MyGroupsPage';
@@ -64,6 +65,7 @@ export default function App() {
                 <Route path="/forgot-password" element={<ForgotPasswordPage />} />
                 <Route path="/dealer/pending-approval" element={<PendingApprovalPage />} />
                 <Route path="/dealer/pending" element={<PendingApprovalPage />} />
+                <Route path="/dealer/status" element={<DealerStatusPage />} />
 
                 {/* Buyer Protected Pages */}
                 <Route

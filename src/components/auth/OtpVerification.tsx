@@ -65,6 +65,11 @@ export function OtpVerification({
     if (index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
+
+    // Auto-submit on 6th digit (Requirement D.1)
+    if (next.every((d) => d.length === 1)) {
+      handleVerify(undefined, next.join(''));
+    }
   };
 
   // Handle backspace navigation
@@ -74,7 +79,7 @@ export function OtpVerification({
     }
   };
 
-  // Handle paste support (splits 6 digits across all boxes)
+  // Handle paste support (splits 6 digits across all boxes & auto-submits)
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
     e.preventDefault();
     const pasteData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
@@ -86,14 +91,18 @@ export function OtpVerification({
     }
     setDigits(next);
 
-    const targetIndex = Math.min(pasteData.length, 5);
-    inputRefs.current[targetIndex]?.focus();
+    if (pasteData.length === 6) {
+      handleVerify(undefined, pasteData);
+    } else {
+      const targetIndex = Math.min(pasteData.length, 5);
+      inputRefs.current[targetIndex]?.focus();
+    }
   };
 
   // Verify OTP submission
-  const handleVerify = async (e?: React.FormEvent) => {
+  const handleVerify = async (e?: React.FormEvent, codeOverride?: string) => {
     if (e) e.preventDefault();
-    const token = digits.join('');
+    const token = codeOverride || digits.join('');
     if (token.length < 6) {
       setError('Please enter all 6 digits of the code.');
       return;
@@ -188,7 +197,16 @@ export function OtpVerification({
         <CardDescription className="text-xs text-slate-600 max-w-sm mx-auto leading-relaxed mt-1">
           {description || (
             <>
-              Enter the 6-digit verification code sent to <strong className="text-slate-900">{email}</strong>
+              We sent a 6-digit code to <strong className="text-slate-900">{email}</strong>
+              {onChangeEmail && (
+                <button
+                  type="button"
+                  onClick={onChangeEmail}
+                  className="block mx-auto mt-1 font-semibold text-brand-600 hover:text-brand-700 underline text-[11px]"
+                >
+                  Change email address
+                </button>
+              )}
             </>
           )}
         </CardDescription>

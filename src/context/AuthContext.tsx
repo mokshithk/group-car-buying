@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
-import { Profile, Dealership, UserRole } from '@/types';
+import { Profile, Dealership, UserRole, DealershipStatus } from '@/types';
 import type { User } from '@supabase/supabase-js';
 
 export interface BuyerRegistrationData {
@@ -34,13 +34,13 @@ interface AuthContextType {
     success: boolean;
     error?: string;
     role?: UserRole;
-    dealershipStatus?: 'PENDING' | 'VERIFIED' | 'SUSPENDED';
+    dealershipStatus?: DealershipStatus;
     isUnconfirmedEmail?: boolean;
   }>;
   registerBuyer: (data: BuyerRegistrationData) => Promise<{ success: boolean; error?: string; requiresEmailConfirmation?: boolean }>;
   registerDealer: (data: DealerRegistrationData) => Promise<{ success: boolean; error?: string; requiresEmailConfirmation?: boolean }>;
   logout: () => Promise<void>;
-  refreshProfile: () => Promise<void>;
+  refreshProfile: () => Promise<{ profile: Profile | null; dealership: Dealership | null } | undefined>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -51,10 +51,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [dealership, setDealership] = useState<Dealership | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const fetchProfileAndDealership = useCallback(async (userId: string) => {
+  const fetchProfileAndDealership = useCallback(async (userId: string): Promise<{ profile: Profile | null; dealership: Dealership | null }> => {
     try {
       if (!isSupabaseConfigured()) {
-        return;
+        return { profile: null, dealership: null };
       }
       const { data: prof, error: profError } = await supabase
         .from('profiles')
@@ -65,33 +65,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (profError) throw profError;
 
       if (prof) {
-        setProfile(prof as Profile);
+        const p = prof as Profile;
+        setProfile(p);
 
-        if (prof.role === 'dealer') {
+        let dData: Dealership | null = null;
+        if (p.role === 'dealer') {
           const { data: dealerUser } = await supabase
             .from('dealer_users')
             .select('dealership_id')
             .eq('user_id', userId)
             .maybeSingle();
 
-          if (dealerUser) {
+          let targetId = dealerUser?.dealership_id;
+          if (!targetId) {
+            const { data: sessionData } = await supabase.auth.getSession();
+            const userEmail = sessionData?.session?.user?.email;
+            if (userEmail) {
+              const { data: directD } = await supabase
+                .from('dealerships')
+                .select('id')
+                .eq('contact_email', userEmail)
+                .maybeSingle();
+              targetId = directD?.id;
+            }
+          }
+
+          if (targetId) {
             const { data: dealerData } = await supabase
               .from('dealerships')
               .select('*')
-              .eq('id', dealerUser.dealership_id)
+              .eq('id', targetId)
               .maybeSingle();
 
             if (dealerData) {
-              setDealership(dealerData as Dealership);
+              dData = dealerData as Dealership;
+              setDealership(dData);
             }
           }
         }
+        return { profile: p, dealership: dData };
       }
     } catch (err) {
       if (import.meta.env.DEV) {
         console.error('Error fetching profile and dealership:', err);
       }
     }
+    return { profile: null, dealership: null };
   }, []);
 
   useEffect(() => {
@@ -167,7 +186,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .maybeSingle();
 
         const role = (prof?.role as UserRole) || 'buyer';
-        let dealershipStatus: 'PENDING' | 'VERIFIED' | 'SUSPENDED' | undefined;
+        let dealershipStatus: DealershipStatus | undefined;
 
         if (role === 'dealer') {
           const { data: du } = await supabase
@@ -176,13 +195,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             .eq('user_id', data.user.id)
             .maybeSingle();
 
-          if (du) {
+          let dId = du?.dealership_id;
+          if (!dId && data.user.email) {
+            const { data: directD } = await supabase
+              .from('dealerships')
+              .select('id')
+              .eq('contact_email', data.user.email)
+              .maybeSingle();
+            dId = directD?.id;
+          }
+
+          if (dId) {
             const { data: dRow } = await supabase
               .from('dealerships')
               .select('status')
-              .eq('id', du.dealership_id)
+              .eq('id', dId)
               .maybeSingle();
-            dealershipStatus = dRow?.status as any;
+            dealershipStatus = dRow?.status as DealershipStatus;
           }
         }
 
@@ -235,6 +264,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!authData.user) return { success: false, error: 'User creation failed.' };
+
+      // Requirement D.5: If user exists and is already verified, identities array is empty
+      if (authData.user.identities && authData.user.identities.length === 0) {
+        return {
+          success: false,
+          error: 'This email is already registered. Please sign in.',
+        };
+      }
 
       if (authData.session) {
         await fetchProfileAndDealership(authData.user.id);
@@ -293,6 +330,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (!authData.user) return { success: false, error: 'Dealer account creation failed.' };
 
+      // Requirement D.5: If user exists and is already verified, identities array is empty
+      if (authData.user.identities && authData.user.identities.length === 0) {
+        return {
+          success: false,
+          error: 'This email is already registered. Please sign in.',
+        };
+      }
+
       if (authData.session) {
         await fetchProfileAndDealership(authData.user.id);
         return { success: true, requiresEmailConfirmation: false };
@@ -319,10 +364,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setDealership(null);
   };
 
-  const refreshProfile = async () => {
-    if (user) {
-      await fetchProfileAndDealership(user.id);
+  const refreshProfile = async (): Promise<{ profile: Profile | null; dealership: Dealership | null } | undefined> => {
+    let currentUserId = user?.id;
+    if (!currentUserId) {
+      const { data: { session } } = await supabase.auth.getSession();
+      currentUserId = session?.user?.id;
+      if (session?.user) {
+        setUser(session.user);
+      }
     }
+    if (currentUserId) {
+      return await fetchProfileAndDealership(currentUserId);
+    }
+    return undefined;
   };
 
   return (

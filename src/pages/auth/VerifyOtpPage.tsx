@@ -7,16 +7,26 @@ import { Car } from 'lucide-react';
 export function VerifyOtpPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { refreshProfile, profile } = useAuth();
+  const { refreshProfile, profile, dealership } = useAuth();
 
   const emailParam = searchParams.get('email') || '';
   const typeParam = (searchParams.get('type') as 'signup' | 'recovery') || 'signup';
   const [email] = useState(emailParam);
 
   const handleSuccess = async () => {
-    await refreshProfile();
-    if (profile?.role === 'dealer') {
-      navigate('/dealer/pending-approval', { replace: true });
+    const res = await refreshProfile();
+    const currentRole = res?.profile?.role || profile?.role;
+    if (currentRole === 'admin') {
+      navigate('/admin/dealers', { replace: true });
+    } else if (currentRole === 'dealer') {
+      const dStatus = res?.dealership?.status || dealership?.status;
+      if (dStatus === 'REJECTED' || dStatus === 'SUSPENDED') {
+        navigate('/dealer/status', { replace: true });
+      } else if (dStatus === 'PENDING') {
+        navigate('/dealer/pending', { replace: true });
+      } else {
+        navigate('/dealer/dashboard', { replace: true });
+      }
     } else {
       navigate('/buyer/dashboard', { replace: true });
     }

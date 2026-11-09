@@ -63,9 +63,17 @@ export function ProtectedRoute({
     );
   }
 
-  // 3. Role Guards: buyer cannot open dealer routes, dealer cannot open buyer routes (Section F.3)
+  // 3. Role Guards: Roles cannot open each other's routes (Section E.3)
   if (allowedRoles && !allowedRoles.includes(profile.role)) {
-    if (profile.role === 'dealer') {
+    if (profile.role === 'admin') {
+      return <Navigate to="/admin/dealers" replace />;
+    } else if (profile.role === 'dealer') {
+      const dStatus = dealership?.status;
+      if (dStatus === 'REJECTED' || dStatus === 'SUSPENDED') {
+        return <Navigate to="/dealer/status" replace />;
+      } else if (dStatus === 'PENDING') {
+        return <Navigate to="/dealer/pending" replace />;
+      }
       return <Navigate to="/dealer/dashboard" replace />;
     } else if (profile.role === 'buyer') {
       return <Navigate to="/buyer/dashboard" replace />;
@@ -73,10 +81,17 @@ export function ProtectedRoute({
     return <Navigate to="/" replace />;
   }
 
-  // 4. If verified dealer is required, check dealership verification status
-  if (profile.role === 'dealer' && requireVerifiedDealer) {
-    if (dealership && dealership.status === 'PENDING') {
-      return <Navigate to="/dealer/pending-approval" replace />;
+  // 4. Dealer status checks
+  if (profile.role === 'dealer') {
+    const dStatus = dealership?.status;
+    if (dStatus === 'REJECTED' || dStatus === 'SUSPENDED') {
+      if (location.pathname !== '/dealer/status') {
+        return <Navigate to="/dealer/status" replace />;
+      }
+    } else if (dStatus === 'PENDING' && requireVerifiedDealer) {
+      if (location.pathname !== '/dealer/pending' && location.pathname !== '/dealer/pending-approval') {
+        return <Navigate to="/dealer/pending" replace />;
+      }
     }
   }
 
