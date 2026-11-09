@@ -4,26 +4,33 @@ import { BuyerLayout } from '@/components/layout/BuyerLayout';
 import { Button, Badge, Card } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import { fetchGroupsForDistrict } from '@/lib/groupService';
-import { INITIAL_DISTRICTS } from '@/lib/catalogData';
-import { Group } from '@/types';
+import { fetchDistricts } from '@/lib/catalogService';
+import { Group, District } from '@/types';
 import { Users, PlusCircle, ArrowRight, Compass, ShieldCheck } from 'lucide-react';
 
 export function MyGroupsPage() {
   const { profile } = useAuth();
+  const [districts, setDistricts] = useState<District[]>([]);
   const buyerDistrictId = profile?.district_id || 'd1111111-1111-1111-1111-111111111101';
   const currentDistrict =
-    INITIAL_DISTRICTS.find((d) => d.id === buyerDistrictId) || INITIAL_DISTRICTS[0];
+    districts.find((d) => d.id === buyerDistrictId) || districts[0] || { id: buyerDistrictId, name: 'Your District', state: '' };
 
   const [myGroups, setMyGroups] = useState<Group[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    fetchDistricts().then(setDistricts).catch(console.error);
+  }, []);
+
+  useEffect(() => {
     async function load() {
       setIsLoading(true);
-      // Fetch groups in district (representing user's active groups)
-      const data = await fetchGroupsForDistrict(buyerDistrictId);
-      // For preview, show user's active groups (first 2 groups)
-      setMyGroups(data.slice(0, 3));
+      try {
+        const data = await fetchGroupsForDistrict(buyerDistrictId);
+        setMyGroups(data);
+      } catch (err) {
+        console.error('Error loading my groups:', err);
+      }
       setIsLoading(false);
     }
     load();

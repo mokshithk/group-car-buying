@@ -1,26 +1,42 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
 import { Button, Input, Select, Badge, Card } from '@/components/ui';
 import { CarIllustration } from '@/components/feature/CarIllustration';
-import { INITIAL_MODELS } from '@/lib/catalogData';
+import { fetchModels } from '@/lib/catalogService';
+import { Model, Variant } from '@/types';
 import { formatINR } from '@/lib/formatters';
-import { Users, FileCheck, ShieldCheck, ArrowRight, Search, Fuel, Sparkles } from 'lucide-react';
+import { Users, FileCheck, ShieldCheck, ArrowRight, Search, Fuel, Sparkles, Loader2 } from 'lucide-react';
 
 const BODY_TYPES = ['All', 'SUV', 'Sedan', 'Hatchback'];
 const FUEL_TYPES = ['All', 'Petrol', 'Diesel', 'CNG', 'Electric', 'Hybrid'];
 const BRANDS = ['All', 'Tata Motors', 'Hyundai', 'Mahindra', 'Maruti Suzuki', 'Volkswagen'];
 
 export function HomePage() {
+  const [models, setModels] = useState<(Model & { variants: Variant[] })[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBrand, setSelectedBrand] = useState('All');
   const [selectedBodyType, setSelectedBodyType] = useState('All');
   const [selectedFuel, setSelectedFuel] = useState('All');
   const [budgetMax, setBudgetMax] = useState<number>(3000000);
 
+  useEffect(() => {
+    fetchModels()
+      .then((data) => {
+        setModels(data);
+        setIsLoading(false);
+      })
+      .catch((err) => {
+        setLoadError(err.message || 'Failed to load car models.');
+        setIsLoading(false);
+      });
+  }, []);
+
   const filteredModels = useMemo(() => {
-    return INITIAL_MODELS.filter((model) => {
+    return models.filter((model) => {
       // Search text match
       const matchesSearch =
         !searchQuery ||
@@ -44,7 +60,7 @@ export function HomePage() {
 
       return matchesSearch && matchesBrand && matchesBody && matchesFuel && matchesBudget;
     });
-  }, [searchQuery, selectedBrand, selectedBodyType, selectedFuel, budgetMax]);
+  }, [models, searchQuery, selectedBrand, selectedBodyType, selectedFuel, budgetMax]);
 
   return (
     <div className="min-h-screen flex flex-col bg-surface-canvas">
@@ -245,7 +261,17 @@ export function HomePage() {
             </div>
 
             {/* Models Grid */}
-            {filteredModels.length === 0 ? (
+            {isLoading ? (
+              <div className="text-center py-20 bg-white rounded-2xl border border-slate-200 p-8">
+                <Loader2 className="w-8 h-8 text-brand-600 animate-spin mx-auto mb-3" />
+                <h3 className="text-sm font-semibold text-slate-700">Loading live car models...</h3>
+              </div>
+            ) : loadError ? (
+              <div className="text-center py-16 bg-white rounded-2xl border border-rose-200 p-8">
+                <h3 className="text-base font-bold text-rose-800">Error loading car catalog</h3>
+                <p className="text-xs text-rose-600 mt-1">{loadError}</p>
+              </div>
+            ) : filteredModels.length === 0 ? (
               <div className="text-center py-16 bg-white rounded-2xl border border-slate-200 p-8">
                 <Search className="w-10 h-10 text-slate-300 mx-auto mb-3" />
                 <h3 className="text-base font-bold text-slate-800">No matching models found</h3>

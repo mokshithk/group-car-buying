@@ -2,14 +2,14 @@ import React, { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { Button, Input, Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui';
-import { Car, Lock, Mail, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Car, Lock, Mail, ArrowRight } from 'lucide-react';
 
 export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { login, setMockSession } = useAuth();
+  const { login } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirectUrl = searchParams.get('redirect');
@@ -24,24 +24,25 @@ export function LoginPage() {
 
     if (res.success) {
       if (redirectUrl) {
-        navigate(redirectUrl, { replace: true });
+        // Enforce role compatibility on redirect
+        if (res.role === 'buyer' && redirectUrl.startsWith('/dealer')) {
+          navigate('/buyer/dashboard', { replace: true });
+        } else if (res.role === 'dealer' && redirectUrl.startsWith('/buyer')) {
+          navigate('/dealer/dashboard', { replace: true });
+        } else {
+          navigate(redirectUrl, { replace: true });
+        }
       } else if (res.role === 'dealer') {
         navigate('/dealer/dashboard', { replace: true });
       } else {
         navigate('/buyer/dashboard', { replace: true });
       }
     } else {
+      if (res.isUnconfirmedEmail) {
+        navigate(`/register/verify-otp?email=${encodeURIComponent(email)}&type=signup`, { replace: true });
+        return;
+      }
       setError(res.error || 'Invalid credentials');
-    }
-  };
-
-  const handleQuickDemo = (role: 'buyer' | 'dealer') => {
-    if (role === 'dealer') {
-      setMockSession('dealer');
-      navigate(redirectUrl || '/dealer/dashboard', { replace: true });
-    } else {
-      setMockSession('buyer');
-      navigate(redirectUrl || '/buyer/dashboard', { replace: true });
     }
   };
 
@@ -78,7 +79,7 @@ export function LoginPage() {
               <Input
                 label="Email Address"
                 type="email"
-                placeholder="name@gmail.com"
+                placeholder="name@domain.com"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -92,7 +93,7 @@ export function LoginPage() {
                     to="/forgot-password"
                     className="text-xs font-semibold text-brand-600 hover:text-brand-700"
                   >
-                    Forgot?
+                    Forgot Password?
                   </Link>
                 </div>
                 <Input
@@ -117,50 +118,13 @@ export function LoginPage() {
               </Button>
             </form>
 
-            <div className="mt-6 pt-6 border-t border-slate-100 text-center space-y-3">
-              <p className="text-xs text-slate-500">
-                New to AutoGroup?{' '}
-                <Link to="/register/buyer" className="font-semibold text-brand-600 hover:text-brand-700">
-                  Register as Buyer
-                </Link>
-                {' · '}
-                <Link to="/register/dealer" className="font-semibold text-slate-700 hover:text-brand-600">
-                  Dealership Sign Up
+            <div className="mt-6 pt-6 border-t border-slate-100 text-center">
+              <p className="text-xs text-slate-600">
+                Don&apos;t have an account?{' '}
+                <Link to="/register" className="font-semibold text-brand-600 hover:text-brand-700">
+                  Create an account
                 </Link>
               </p>
-
-              {/* Instant Test Mode Switcher */}
-              <div className="pt-3 border-t border-dashed border-slate-200">
-                <div className="flex items-center justify-center gap-1.5 text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  Instant Test Session
-                </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => handleQuickDemo('buyer')}
-                    className="text-xs bg-slate-50 hover:bg-slate-100"
-                  >
-                    Buyer Test Session
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => handleQuickDemo('dealer')}
-                    className="text-xs bg-slate-50 hover:bg-slate-100"
-                  >
-                    Dealer Test Session
-                  </Button>
-                </div>
-                <div className="mt-2.5 p-2 bg-slate-50 rounded-lg text-center text-[11px] text-slate-500">
-                  <span>Demo Buyer: <strong>buyer@example.com</strong> (any password)</span>
-                  <br />
-                  <span>Demo Dealer: <strong>dealer@example.com</strong> (any password)</span>
-                </div>
-              </div>
             </div>
           </CardContent>
         </Card>

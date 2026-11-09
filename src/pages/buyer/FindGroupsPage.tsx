@@ -5,9 +5,9 @@ import { Button, Badge, Card, Modal } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/Toast';
 import { fetchGroupsForDistrict, joinGroup } from '@/lib/groupService';
-import { INITIAL_DISTRICTS } from '@/lib/catalogData';
+import { fetchDistricts } from '@/lib/catalogService';
 import { formatINR, calculateDaysUntilVisible } from '@/lib/formatters';
-import { Group } from '@/types';
+import { Group, District } from '@/types';
 import {
   Compass,
   Users,
@@ -26,9 +26,10 @@ export function FindGroupsPage() {
   const [searchParams] = useSearchParams();
   const filterVariantId = searchParams.get('variantId');
 
+  const [districts, setDistricts] = useState<District[]>([]);
   const buyerDistrictId = profile?.district_id || 'd1111111-1111-1111-1111-111111111101';
   const currentDistrict =
-    INITIAL_DISTRICTS.find((d) => d.id === buyerDistrictId) || INITIAL_DISTRICTS[0];
+    districts.find((d) => d.id === buyerDistrictId) || districts[0] || { id: buyerDistrictId, name: 'Your District', state: '' };
 
   const [groups, setGroups] = useState<Group[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -38,13 +39,23 @@ export function FindGroupsPage() {
   const [isJoining, setIsJoining] = useState(false);
 
   useEffect(() => {
+    fetchDistricts()
+      .then(setDistricts)
+      .catch((err) => console.error('Failed to load districts:', err));
+  }, []);
+
+  useEffect(() => {
     async function load() {
       setIsLoading(true);
-      const data = await fetchGroupsForDistrict(buyerDistrictId);
-      if (filterVariantId) {
-        setGroups(data.filter((g) => g.variant_id === filterVariantId));
-      } else {
-        setGroups(data);
+      try {
+        const data = await fetchGroupsForDistrict(buyerDistrictId);
+        if (filterVariantId) {
+          setGroups(data.filter((g) => g.variant_id === filterVariantId));
+        } else {
+          setGroups(data);
+        }
+      } catch (err) {
+        console.error('Failed to load groups for district:', err);
       }
       setIsLoading(false);
     }

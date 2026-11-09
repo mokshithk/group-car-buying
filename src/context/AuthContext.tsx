@@ -30,12 +30,11 @@ interface AuthContextType {
   dealership: Dealership | null;
   role: UserRole | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; role?: UserRole }>;
+  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; role?: UserRole; isUnconfirmedEmail?: boolean }>;
   registerBuyer: (data: BuyerRegistrationData) => Promise<{ success: boolean; error?: string; requiresEmailConfirmation?: boolean }>;
   registerDealer: (data: DealerRegistrationData) => Promise<{ success: boolean; error?: string; requiresEmailConfirmation?: boolean }>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
-  setMockSession: (role: UserRole, profileData?: Partial<Profile>, dealershipData?: Partial<Dealership>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -58,6 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .maybeSingle();
 
       if (profError) throw profError;
+
       if (prof) {
         setProfile(prof as Profile);
 
@@ -80,58 +80,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
           }
         }
-      } else {
-        // Fallback: If user is authenticated in auth.users but has no profile row yet, auto-create profile from metadata
-        const { data: authUserObj } = await supabase.auth.getUser();
-        if (authUserObj?.user && authUserObj.user.id === userId) {
-          const meta = authUserObj.user.user_metadata || {};
-          const fallbackRole = (meta.role as UserRole) || 'buyer';
-          const fallbackProfile: Profile = {
-            id: userId,
-            role: fallbackRole,
-            full_name: meta.full_name || authUserObj.user.email?.split('@')[0] || 'Car Buyer',
-            phone: meta.phone || '+91 98765 43210',
-            district_id: meta.district_id || 'd1111111-1111-1111-1111-111111111101',
-            consent_share_details: true,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          };
-          try {
-            await supabase.from('profiles').insert(fallbackProfile);
-          } catch {
-            // ignore if already created
-          }
-          setProfile(fallbackProfile);
-        }
       }
     } catch (err) {
-      console.error('Error fetching profile:', err);
+      if (import.meta.env.DEV) {
+        console.error('Error fetching profile and dealership:', err);
+      }
     }
   }, []);
 
   useEffect(() => {
-    // Check localStorage for mock/test session first (used by Instant Test Session & E2E tests)
-    const savedMock = localStorage.getItem('autogroup_mock_session');
-    if (savedMock) {
-      try {
-        const parsed = JSON.parse(savedMock);
-        setUser({ id: parsed.profile.id, email: parsed.email } as unknown as User);
-        setProfile(parsed.profile);
-        setDealership(parsed.dealership || null);
-        setIsLoading(false);
-        return;
-      } catch {
-        // ignore
-      }
-    }
-
     if (!isSupabaseConfigured()) {
       setIsLoading(false);
       return;
     }
 
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (localStorage.getItem('autogroup_mock_session')) return;
       setUser(session?.user ?? null);
       if (session?.user) {
         fetchProfileAndDealership(session.user.id);
@@ -142,7 +105,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (localStorage.getItem('autogroup_mock_session')) return;
       setUser(session?.user ?? null);
       if (session?.user) {
         fetchProfileAndDealership(session.user.id);
@@ -160,63 +122,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     try {
       if (!isSupabaseConfigured()) {
-        // Fallback for preview/testing when Supabase env is not yet configured
-        let mockRole: UserRole = 'buyer';
-        if (email.toLowerCase().includes('dealer')) mockRole = 'dealer';
-        else if (email.toLowerCase().includes('admin')) mockRole = 'admin';
-
-        const mockProf: Profile = {
-          id: crypto.randomUUID(),
-          role: mockRole,
-          full_name: email.split('@')[0],
-          phone: '+91 98765 43210',
-          district_id: 'd1111111-1111-1111-1111-111111111101', // Bengaluru Urban
-          consent_share_details: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-
-        let mockDealer: Dealership | null = null;
-        if (mockRole === 'dealer') {
-          mockDealer = {
-            id: 'e1111111-1111-1111-1111-111111111101',
-            name: 'Apex Motors (Bengaluru)',
-            status: 'VERIFIED',
-            address: '45 Outer Ring Road, Marathahalli, Bengaluru',
-            district_id: 'd1111111-1111-1111-1111-111111111101',
-            contact_phone: '+91 98450 11223',
-            contact_email: email,
-            gst_number: '29AAAAA0000A1Z5',
-            brands: ['Tata Motors', 'Hyundai'],
-            districts: ['d1111111-1111-1111-1111-111111111101'],
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          };
-        }
-
-        setMockSession(mockRole, mockProf, mockDealer || undefined);
-        setIsLoading(false);
-        return { success: true, role: mockRole };
-      }
-
-      // Instant test session credentials bypass (works seamlessly for testing/grading)
-      const cleanEmail = email.trim().toLowerCase();
-      if (cleanEmail === 'buyer@example.com' || cleanEmail === 'buyer@test.com' || cleanEmail === 'buyer@autogroup.com') {
-        setMockSession('buyer');
-        return { success: true, role: 'buyer' as UserRole };
-      }
-      if (cleanEmail === 'dealer@example.com' || cleanEmail === 'dealer@test.com' || cleanEmail === 'dealer@autogroup.com') {
-        setMockSession('dealer');
-        return { success: true, role: 'dealer' as UserRole };
+        return { success: false, error: 'Database backend is not configured.' };
       }
 
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
-        let msg = error.message;
-        if (msg.toLowerCase().includes('credential') || msg.toLowerCase().includes('confirm')) {
-          msg = 'Invalid credentials or email not confirmed. (If you recently registered, please verify your email, or disable "Confirm email" in Supabase Auth > Providers > Email to log in immediately).';
+        const errorMsg = error.message;
+        const isEmailNotConfirmed =
+          errorMsg.toLowerCase().includes('email not confirmed') ||
+          (error as any).code === 'email_not_confirmed';
+
+        if (import.meta.env.DEV) {
+          console.error('Supabase signInWithPassword error:', error);
         }
-        return { success: false, error: msg };
+
+        if (isEmailNotConfirmed) {
+          return {
+            success: false,
+            error: 'Your email address has not been verified yet.',
+            isUnconfirmedEmail: true,
+          };
+        }
+
+        return {
+          success: false,
+          error: errorMsg.toLowerCase().includes('invalid login credentials')
+            ? 'Invalid email or password.'
+            : errorMsg,
+        };
       }
 
       if (data.user) {
@@ -227,10 +160,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .eq('id', data.user.id)
           .maybeSingle();
 
-        return { success: true, role: (prof?.role as UserRole) || 'buyer' };
+        const role = (prof?.role as UserRole) || 'buyer';
+        return { success: true, role };
       }
-      return { success: false, error: 'Login failed' };
+      return { success: false, error: 'Login failed. Please check credentials.' };
     } catch (err: unknown) {
+      if (import.meta.env.DEV) {
+        console.error('Login error:', err);
+      }
       const msg = err instanceof Error ? err.message : 'Login failed';
       return { success: false, error: msg };
     } finally {
@@ -242,18 +179,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     try {
       if (!isSupabaseConfigured()) {
-        const mockProf: Profile = {
-          id: crypto.randomUUID(),
-          role: 'buyer',
-          full_name: data.fullName,
-          phone: data.phone,
-          district_id: data.districtId,
-          consent_share_details: data.consentShareDetails,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-        setMockSession('buyer', mockProf);
-        return { success: true };
+        return { success: false, error: 'Database backend is not configured.' };
       }
 
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -271,30 +197,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (authError) {
+        if (import.meta.env.DEV) {
+          console.error('Supabase signUp buyer error:', authError);
+        }
         let msg = authError.message;
         if (msg.includes('rate limit') || (authError as any).code === 'over_email_send_rate_limit') {
-          msg = 'Supabase email rate limit exceeded (3/hour on free tier). In Supabase Dashboard > Authentication > Providers > Email, turn OFF "Confirm email" to enable instant registration.';
+          msg = 'Email rate limit exceeded. Please wait a few moments before trying again or configure SMTP in Supabase.';
         } else if (msg.includes('invalid') || (authError as any).code === 'email_address_invalid') {
-          msg = 'Please enter a valid real email address (e.g. name@gmail.com). Test domains like @example.com are blocked by Supabase.';
+          msg = 'Please enter a valid email address.';
         }
         return { success: false, error: msg };
       }
 
-      if (!authData.user) return { success: false, error: 'User creation failed' };
-
-      // Client-side profile insert/upsert
-      try {
-        await supabase.from('profiles').upsert({
-          id: authData.user.id,
-          role: 'buyer',
-          full_name: data.fullName,
-          phone: data.phone,
-          district_id: data.districtId,
-          consent_share_details: data.consentShareDetails,
-        });
-      } catch {
-        // Trigger on auth.users handles profile creation if RLS prevents anon insert
-      }
+      if (!authData.user) return { success: false, error: 'User creation failed.' };
 
       if (authData.session) {
         await fetchProfileAndDealership(authData.user.id);
@@ -303,6 +218,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       return { success: true, requiresEmailConfirmation: true };
     } catch (err: unknown) {
+      if (import.meta.env.DEV) {
+        console.error('Buyer registration exception:', err);
+      }
       const msg = err instanceof Error ? err.message : 'Registration failed';
       return { success: false, error: msg };
     } finally {
@@ -314,34 +232,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true);
     try {
       if (!isSupabaseConfigured()) {
-        const mockDealer: Dealership = {
-          id: crypto.randomUUID(),
-          name: data.dealershipName,
-          status: 'PENDING',
-          address: data.address,
-          district_id: data.districtId,
-          contact_phone: data.phone,
-          contact_email: data.email,
-          gst_number: data.gstNumber,
-          brands: data.brands,
-          districts: [data.districtId],
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-
-        const mockProf: Profile = {
-          id: crypto.randomUUID(),
-          role: 'dealer',
-          full_name: data.ownerName,
-          phone: data.phone,
-          district_id: data.districtId,
-          consent_share_details: true,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
-
-        setMockSession('dealer', mockProf, mockDealer);
-        return { success: true };
+        return { success: false, error: 'Database backend is not configured.' };
       }
 
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -363,54 +254,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
       if (authError) {
+        if (import.meta.env.DEV) {
+          console.error('Supabase signUp dealer error:', authError);
+        }
         let msg = authError.message;
         if (msg.includes('rate limit') || (authError as any).code === 'over_email_send_rate_limit') {
-          msg = 'Supabase email rate limit exceeded (3/hour on free tier). In Supabase Dashboard > Authentication > Providers > Email, turn OFF "Confirm email" to enable instant registration.';
+          msg = 'Email rate limit exceeded. Please wait a few moments before trying again or configure SMTP in Supabase.';
         } else if (msg.includes('invalid') || (authError as any).code === 'email_address_invalid') {
-          msg = 'Please enter a valid real email address (e.g. name@gmail.com). Test domains like @example.com are blocked by Supabase.';
+          msg = 'Please enter a valid email address.';
         }
         return { success: false, error: msg };
       }
 
-      if (!authData.user) return { success: false, error: 'Dealer account creation failed' };
-
-      // Client-side fallback insert if session exists
-      try {
-        await supabase.from('profiles').upsert({
-          id: authData.user.id,
-          role: 'dealer',
-          full_name: data.ownerName,
-          phone: data.phone,
-          district_id: data.districtId,
-          consent_share_details: true,
-        });
-
-        const { data: dealerRow } = await supabase
-          .from('dealerships')
-          .insert({
-            name: data.dealershipName,
-            status: 'PENDING',
-            address: data.address,
-            district_id: data.districtId,
-            contact_phone: data.phone,
-            contact_email: data.email,
-            gst_number: data.gstNumber,
-            brands: data.brands,
-            districts: [data.districtId],
-          })
-          .select()
-          .maybeSingle();
-
-        if (dealerRow) {
-          await supabase.from('dealer_users').insert({
-            dealership_id: dealerRow.id,
-            user_id: authData.user.id,
-            role: 'owner',
-          });
-        }
-      } catch {
-        // Trigger on auth.users handles dealership & dealer_users creation if RLS prevents client insert
-      }
+      if (!authData.user) return { success: false, error: 'Dealer account creation failed.' };
 
       if (authData.session) {
         await fetchProfileAndDealership(authData.user.id);
@@ -419,6 +275,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       return { success: true, requiresEmailConfirmation: true };
     } catch (err: unknown) {
+      if (import.meta.env.DEV) {
+        console.error('Dealer registration exception:', err);
+      }
       const msg = err instanceof Error ? err.message : 'Dealer registration failed';
       return { success: false, error: msg };
     } finally {
@@ -427,7 +286,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
-    localStorage.removeItem('autogroup_mock_session');
     if (isSupabaseConfigured()) {
       await supabase.auth.signOut();
     }
@@ -440,61 +298,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (user) {
       await fetchProfileAndDealership(user.id);
     }
-  };
-
-  const setMockSession = (
-    role: UserRole,
-    profileData?: Partial<Profile>,
-    dealershipData?: Partial<Dealership>
-  ) => {
-    const mockUser = {
-      id: profileData?.id || (role === 'dealer' ? '11111111-1111-1111-1111-111111111102' : '11111111-1111-1111-1111-111111111101'),
-      email: (role === 'dealer' ? 'dealer' : 'buyer') + '@example.com',
-    } as unknown as User;
-
-    const mockProf: Profile = {
-      id: mockUser.id,
-      role,
-      full_name: profileData?.full_name || (role === 'dealer' ? 'Dealer Partner' : 'Car Buyer'),
-      phone: profileData?.phone || '+91 98765 43210',
-      district_id: profileData?.district_id || 'd1111111-1111-1111-1111-111111111101',
-      consent_share_details: true,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      ...profileData,
-    };
-
-    let mockDealer: Dealership | null = null;
-    if (role === 'dealer') {
-      mockDealer = {
-        id: 'e1111111-1111-1111-1111-111111111101',
-        name: 'Apex Motors (Bengaluru)',
-        status: 'VERIFIED',
-        address: '45 Outer Ring Road, Marathahalli, Bengaluru',
-        district_id: 'd1111111-1111-1111-1111-111111111101',
-        contact_phone: '+91 98450 11223',
-        contact_email: 'dealer@example.com',
-        gst_number: '29AAAAA0000A1Z5',
-        brands: ['Tata Motors', 'Hyundai'],
-        districts: ['d1111111-1111-1111-1111-111111111101'],
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        ...dealershipData,
-      };
-    }
-
-    setUser(mockUser);
-    setProfile(mockProf);
-    setDealership(mockDealer);
-
-    localStorage.setItem(
-      'autogroup_mock_session',
-      JSON.stringify({
-        email: mockUser.email,
-        profile: mockProf,
-        dealership: mockDealer,
-      })
-    );
   };
 
   return (
@@ -510,7 +313,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         registerDealer,
         logout,
         refreshProfile,
-        setMockSession,
       }}
     >
       {children}

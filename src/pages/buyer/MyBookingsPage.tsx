@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { BuyerLayout } from '@/components/layout/BuyerLayout';
 import { Button, Badge, Card, Modal, Input } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/Toast';
 import {
-  getLocalBookings,
+  fetchBuyerBookings,
   cancelBookingByBuyer,
   confirmDelivery,
   submitDealerRating,
@@ -43,16 +43,17 @@ export function MyBookingsPage() {
   const [reportReason, setReportReason] = useState('did_not_honor_price');
   const [reportDetails, setReportDetails] = useState('');
 
-  const loadBookings = () => {
+  const loadBookings = useCallback(async () => {
+    if (!user) return;
     setIsLoading(true);
-    const all = getLocalBookings();
+    const all = await fetchBuyerBookings(user.id);
     setBookings(all);
     setIsLoading(false);
-  };
+  }, [user]);
 
   useEffect(() => {
     loadBookings();
-  }, []);
+  }, [loadBookings]);
 
   const handleConfirmDelivery = async (bookingId: string) => {
     const success = await confirmDelivery(bookingId);
@@ -62,9 +63,12 @@ export function MyBookingsPage() {
         title: 'Vehicle Delivery Confirmed!',
         message: 'Congratulations on receiving your car! Please rate your showroom experience.',
       });
-      loadBookings();
-      const updated = getLocalBookings().find((b) => b.id === bookingId);
-      if (updated) setRatingBookingTarget(updated);
+      if (user) {
+        const fresh = await fetchBuyerBookings(user.id);
+        setBookings(fresh);
+        const updated = fresh.find((b: Booking) => b.id === bookingId);
+        if (updated) setRatingBookingTarget(updated);
+      }
     }
   };
 

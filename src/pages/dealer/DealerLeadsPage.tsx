@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { DealerLayout } from '@/components/layout/DealerLayout';
 import { Button, Badge, Card } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/Toast';
-import { getLocalInterests, saveLocalInterests } from '@/lib/bookingService';
+import { fetchDealerInterests } from '@/lib/bookingService';
+import { supabase } from '@/lib/supabase';
 import { formatINR, formatDateTime } from '@/lib/formatters';
 import { Interest } from '@/types';
 import { PhoneCall, User, Phone, CheckCircle2, Clock, ShieldCheck } from 'lucide-react';
@@ -15,28 +16,38 @@ export function DealerLeadsPage() {
   const [leads, setLeads] = useState<Interest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  const loadLeads = () => {
+  const loadLeads = useCallback(async () => {
+    if (!dealership) {
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
-    const all = getLocalInterests();
-    // Dealers only see leads for their own showroom (Section 2 & 5)
-    const myLeads = all.filter((item) => item.dealership_id === dealership?.id || all.length <= 2);
+    const myLeads = await fetchDealerInterests(dealership.id);
     setLeads(myLeads);
     setIsLoading(false);
-  };
+  }, [dealership]);
 
   useEffect(() => {
     loadLeads();
-  }, [dealership]);
+  }, [loadLeads]);
 
-  const handleToggleContacted = (leadId: string) => {
-    const all = getLocalInterests();
-    const target = all.find((l) => l.id === leadId);
+  const handleToggleContacted = async (leadId: string) => {
+    const target = leads.find((l: Interest) => l.id === leadId);
     if (target) {
-      target.contacted = !target.contacted;
-      saveLocalInterests(all);
+      const nextStatus = !target.contacted;
+      const { error } = await supabase
+        .from('interests')
+        .update({ contacted: nextStatus })
+        .eq('id', leadId);
+
+      if (error) {
+        toast({ type: 'error', title: 'Update failed', message: error.message });
+        return;
+      }
+
       toast({
         type: 'info',
-        title: target.contacted ? 'Marked as Contacted' : 'Marked as Pending',
+        title: nextStatus ? 'Marked as Contacted' : 'Marked as Pending',
       });
       loadLeads();
     }

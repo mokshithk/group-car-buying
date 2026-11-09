@@ -5,9 +5,10 @@ import { Button, Select, Card, CardHeader, CardTitle, CardDescription, CardConte
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/Toast';
 import { createGroup } from '@/lib/groupService';
-import { INITIAL_MODELS, INITIAL_DISTRICTS } from '@/lib/catalogData';
+import { fetchModels, fetchDistricts } from '@/lib/catalogService';
+import { Model, Variant, District } from '@/types';
 import { formatINR } from '@/lib/formatters';
-import { Users, PlusCircle, ArrowLeft, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Users, PlusCircle, ArrowLeft, Sparkles, CheckCircle2, Loader2 } from 'lucide-react';
 
 export function CreateGroupPage() {
   const { user, profile } = useAuth();
@@ -15,33 +16,56 @@ export function CreateGroupPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  const initialModelId = searchParams.get('modelId') || INITIAL_MODELS[0].id;
-  const initialDistrictId = profile?.district_id || searchParams.get('districtId') || INITIAL_DISTRICTS[0].id;
-
-  const [selectedModelId, setSelectedModelId] = useState(initialModelId);
-  const selectedModel = INITIAL_MODELS.find((m) => m.id === selectedModelId) || INITIAL_MODELS[0];
-
-  const [selectedVariantId, setSelectedVariantId] = useState(selectedModel.variants[0].id);
-  const selectedVariant =
-    selectedModel.variants.find((v) => v.id === selectedVariantId) || selectedModel.variants[0];
-
-  const [districtId, setDistrictId] = useState(initialDistrictId);
-  const selectedDistrict =
-    INITIAL_DISTRICTS.find((d) => d.id === districtId) || INITIAL_DISTRICTS[0];
-
+  const [models, setModels] = useState<(Model & { variants: Variant[] })[]>([]);
+  const [districts, setDistricts] = useState<District[]>([]);
+  const [selectedModelId, setSelectedModelId] = useState('');
+  const [selectedVariantId, setSelectedVariantId] = useState('');
+  const [districtId, setDistrictId] = useState('');
+  const [isInitializing, setIsInitializing] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
+  useEffect(() => {
+    Promise.all([fetchModels(), fetchDistricts()])
+      .then(([mList, dList]) => {
+        setModels(mList);
+        setDistricts(dList);
+
+        const paramModelId = searchParams.get('modelId');
+        const defaultModel = (paramModelId && mList.find((m) => m.id === paramModelId)) || mList[0];
+        const defaultDistrictId = profile?.district_id || searchParams.get('districtId') || dList[0]?.id || '';
+
+        if (defaultModel) {
+          setSelectedModelId(defaultModel.id);
+          if (defaultModel.variants?.length > 0) {
+            setSelectedVariantId(defaultModel.variants[0].id);
+          }
+        }
+        setDistrictId(defaultDistrictId);
+        setIsInitializing(false);
+      })
+      .catch((err) => {
+        setError(err.message || 'Failed to load catalog data.');
+        setIsInitializing(false);
+      });
+  }, [searchParams, profile?.district_id]);
+
+  const selectedModel = models.find((m) => m.id === selectedModelId) || models[0];
+  const selectedVariant =
+    selectedModel?.variants?.find((v) => v.id === selectedVariantId) || selectedModel?.variants?.[0];
+  const selectedDistrict =
+    districts.find((d) => d.id === districtId) || districts[0] || { id: '', name: 'Selected District', state: '' };
+
   // Update selected variant when model changes
   useEffect(() => {
-    if (selectedModel && selectedModel.variants.length > 0) {
+    if (selectedModel && selectedModel.variants?.length > 0) {
       setSelectedVariantId(selectedModel.variants[0].id);
     }
   }, [selectedModel]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !profile) return;
+    if (!user || !profile || !selectedVariant) return;
     setError('');
     setIsLoading(true);
 
@@ -64,6 +88,16 @@ export function CreateGroupPage() {
       setError(res.error || 'Failed to create group');
     }
   };
+
+  if (isInitializing) {
+    return (
+      <BuyerLayout>
+        <div className="py-20 flex justify-center">
+          <Loader2 className="w-8 h-8 text-brand-600 animate-spin" />
+        </div>
+      </BuyerLayout>
+    );
+  }
 
   return (
     <BuyerLayout>
@@ -104,7 +138,7 @@ export function CreateGroupPage() {
               <Select
                 value={districtId}
                 onChange={(e) => setDistrictId(e.target.value)}
-                options={INITIAL_DISTRICTS.map((d) => ({
+                options={districts.map((d) => ({
                   value: d.id,
                   label: `${d.name} (${d.state})`,
                 }))}
@@ -125,7 +159,7 @@ export function CreateGroupPage() {
                 label="Vehicle Model"
                 value={selectedModelId}
                 onChange={(e) => setSelectedModelId(e.target.value)}
-                options={INITIAL_MODELS.map((m) => ({
+                options={models.map((m) => ({
                   value: m.id,
                   label: `${m.manufacturer?.name} ${m.name} (${m.body_type})`,
                 }))}
@@ -136,7 +170,7 @@ export function CreateGroupPage() {
                 label="Exact Variant"
                 value={selectedVariantId}
                 onChange={(e) => setSelectedVariantId(e.target.value)}
-                options={selectedModel.variants.map((v) => ({
+                options={(selectedModel?.variants || []).map((v) => ({
                   value: v.id,
                   label: `${v.name} (${v.transmission}, ${v.fuel_type}) — Ex: ${formatINR(v.ex_showroom_price)}`,
                 }))}

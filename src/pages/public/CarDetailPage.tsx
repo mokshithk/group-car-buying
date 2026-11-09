@@ -1,26 +1,49 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
 import { Button, Badge, Card, Select } from '@/components/ui';
 import { CarIllustration } from '@/components/feature/CarIllustration';
-import { INITIAL_MODELS, INITIAL_DISTRICTS } from '@/lib/catalogData';
+import { fetchModelById, fetchDistricts } from '@/lib/catalogService';
+import { Model, Variant, District } from '@/types';
 import { formatINR } from '@/lib/formatters';
 import { useAuth } from '@/context/AuthContext';
-import { ArrowLeft, Users, CheckCircle, ShieldCheck, PlusCircle, Bookmark, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Users, CheckCircle, ShieldCheck, PlusCircle, Bookmark, ExternalLink, Loader2 } from 'lucide-react';
 
 export function CarDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user, profile } = useAuth();
   const navigate = useNavigate();
 
-  const model = INITIAL_MODELS.find((m) => m.id === id) || INITIAL_MODELS[0];
+  const [model, setModel] = useState<(Model & { variants: Variant[] }) | null>(null);
+  const [districts, setDistricts] = useState<District[]>([]);
   const [selectedDistrictId, setSelectedDistrictId] = useState(
-    profile?.district_id || 'd1111111-1111-1111-1111-111111111101'
+    profile?.district_id || ''
   );
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    Promise.all([
+      id ? fetchModelById(id) : Promise.resolve(null),
+      fetchDistricts(),
+    ])
+      .then(([m, dList]) => {
+        setModel(m);
+        setDistricts(dList);
+        if (dList.length > 0 && !selectedDistrictId) {
+          setSelectedDistrictId(profile?.district_id || dList[0].id);
+        }
+        setIsLoading(false);
+      })
+      .catch((err) => {
+        setError(err.message || 'Failed to load car details.');
+        setIsLoading(false);
+      });
+  }, [id, profile?.district_id, selectedDistrictId]);
 
   const selectedDistrict =
-    INITIAL_DISTRICTS.find((d) => d.id === selectedDistrictId) || INITIAL_DISTRICTS[0];
+    districts.find((d) => d.id === selectedDistrictId) || districts[0] || { id: '', name: 'Selected District', state: '' };
 
   const handleActionRequiringAuth = (targetPath: string) => {
     if (!user) {
@@ -29,6 +52,34 @@ export function CarDetailPage() {
       navigate(targetPath);
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex flex-col bg-surface-canvas">
+        <Navbar />
+        <main className="flex-1 flex items-center justify-center py-20">
+          <Loader2 className="w-8 h-8 text-brand-600 animate-spin" />
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (error || !model) {
+    return (
+      <div className="min-h-screen flex flex-col bg-surface-canvas">
+        <Navbar />
+        <main className="flex-1 max-w-7xl mx-auto px-4 py-16 text-center">
+          <h2 className="text-xl font-bold text-slate-800">Car Model Not Found</h2>
+          <p className="text-sm text-slate-500 mt-2">{error || 'The requested car model could not be found.'}</p>
+          <Link to="/" className="mt-4 inline-block">
+            <Button variant="primary">Return to Catalog</Button>
+          </Link>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-surface-canvas">
@@ -86,7 +137,7 @@ export function CarDetailPage() {
                   label="Select District to View Active Groups"
                   value={selectedDistrictId}
                   onChange={(e) => setSelectedDistrictId(e.target.value)}
-                  options={INITIAL_DISTRICTS.map((d) => ({
+                  options={districts.map((d) => ({
                     value: d.id,
                     label: `${d.name} (${d.state})`,
                   }))}

@@ -34,7 +34,14 @@ import { DealerNotificationsPage } from '@/pages/dealer/DealerNotificationsPage'
 import { ShowroomProfilePage } from '@/pages/dealer/ShowroomProfilePage';
 import { StaffManagementPage } from '@/pages/dealer/StaffManagementPage';
 
+import { isSupabaseConfigured } from '@/lib/supabase';
+import { SupabaseErrorScreen } from '@/components/common/SupabaseErrorScreen';
+
 export default function App() {
+  if (!isSupabaseConfigured()) {
+    return <SupabaseErrorScreen />;
+  }
+
   return (
     <AuthProvider>
       <ToastProvider>

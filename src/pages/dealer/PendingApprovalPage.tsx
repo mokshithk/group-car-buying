@@ -2,10 +2,10 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui';
-import { Clock, RefreshCw, CheckCircle, ShieldAlert, LogOut } from 'lucide-react';
+import { Clock, RefreshCw, ShieldAlert, LogOut } from 'lucide-react';
 
 export function PendingApprovalPage() {
-  const { dealership, refreshProfile, logout, setMockSession } = useAuth();
+  const { dealership, refreshProfile, logout } = useAuth();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const navigate = useNavigate();
 
@@ -14,13 +14,6 @@ export function PendingApprovalPage() {
     await refreshProfile();
     setIsRefreshing(false);
     if (dealership?.status === 'VERIFIED') {
-      navigate('/dealer/dashboard', { replace: true });
-    }
-  };
-
-  const handleSimulateApproval = () => {
-    if (dealership) {
-      setMockSession('dealer', undefined, { ...dealership, status: 'VERIFIED' });
       navigate('/dealer/dashboard', { replace: true });
     }
   };
@@ -34,8 +27,8 @@ export function PendingApprovalPage() {
               <Clock className="w-8 h-8 animate-pulse" />
             </div>
             <CardTitle className="text-xl text-slate-900">Application Under Review</CardTitle>
-            <CardDescription className="text-sm">
-              Your dealership account is currently <strong>PENDING VERIFICATION</strong>
+            <CardDescription className="text-sm font-medium text-slate-600">
+              Your dealership is awaiting verification.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6 pt-4 text-left">
@@ -60,12 +53,12 @@ export function PendingApprovalPage() {
               <p>
                 To maintain consumer trust and pricing integrity on AutoGroup, every showroom registration undergoes manual dealer verification before gaining access to local group tenders.
               </p>
-              <p className="bg-blue-50 border border-blue-200 p-3 rounded-xl text-blue-900 font-medium">
-                💡 <strong>Admin Verification:</strong> Run the approval SQL snippet from <code>supabase/RUN_ME_FIRST.md</code> in your Supabase SQL editor to mark this dealership as <code>VERIFIED</code>.
+              <p>
+                Your dealership is awaiting verification. Once verified, you will have access to district group tenders.
               </p>
             </div>
 
-            <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+            <div className="pt-2">
               <Button
                 variant="primary"
                 className="w-full"
@@ -74,14 +67,6 @@ export function PendingApprovalPage() {
                 leftIcon={<RefreshCw className="w-4 h-4" />}
               >
                 Check Approval Status
-              </Button>
-              <Button
-                variant="secondary"
-                className="w-full text-emerald-700 border-emerald-300 hover:bg-emerald-50"
-                onClick={handleSimulateApproval}
-                leftIcon={<CheckCircle className="w-4 h-4 text-emerald-600" />}
-              >
-                Simulate Instant Approval
               </Button>
             </div>
 

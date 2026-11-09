@@ -32,7 +32,8 @@ export function BuyerDashboardPage() {
       const groups = await fetchGroupsForDistrict(districtId);
       setActiveGroups(groups.slice(0, 3));
       if (user) {
-        setWishlistCount(getWishlist(user.id).length);
+        const wl = await getWishlist(user.id);
+        setWishlistCount(wl.length);
       }
       setIsLoading(false);
     }

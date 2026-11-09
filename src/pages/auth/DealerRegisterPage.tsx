@@ -1,18 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { Button, Input, Select, Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui';
+import { fetchDistricts } from '@/lib/catalogService';
+import { District } from '@/types';
 import { Building2, Lock, Mail, User, Phone, FileText, CheckSquare, ArrowRight, ShieldAlert, CheckCircle2 } from 'lucide-react';
-
-const SEED_DISTRICTS = [
-  { value: 'd1111111-1111-1111-1111-111111111101', label: 'Bengaluru Urban (Karnataka)' },
-  { value: 'd1111111-1111-1111-1111-111111111102', label: 'Bengaluru Rural (Karnataka)' },
-  { value: 'd1111111-1111-1111-1111-111111111103', label: 'Mysuru (Karnataka)' },
-  { value: 'd1111111-1111-1111-1111-111111111105', label: 'Mumbai City (Maharashtra)' },
-  { value: 'd1111111-1111-1111-1111-111111111108', label: 'Chennai (Tamil Nadu)' },
-  { value: 'd1111111-1111-1111-1111-111111111110', label: 'Hyderabad (Telangana)' },
-  { value: 'd1111111-1111-1111-1111-111111111111', label: 'Central Delhi (Delhi)' },
-];
 
 const AVAILABLE_BRANDS = [
   'Tata Motors',
@@ -28,11 +20,12 @@ const AVAILABLE_BRANDS = [
 ];
 
 export function DealerRegisterPage() {
+  const [districts, setDistricts] = useState<District[]>([]);
   const [dealershipName, setDealershipName] = useState('');
   const [ownerName, setOwnerName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [districtId, setDistrictId] = useState(SEED_DISTRICTS[0].value);
+  const [districtId, setDistrictId] = useState('');
   const [address, setAddress] = useState('');
   const [gstNumber, setGstNumber] = useState('');
   const [selectedBrands, setSelectedBrands] = useState<string[]>(['Tata Motors']);
@@ -40,6 +33,15 @@ export function DealerRegisterPage() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccessUnconfirmed, setIsSuccessUnconfirmed] = useState(false);
+
+  useEffect(() => {
+    fetchDistricts().then((dList) => {
+      setDistricts(dList);
+      if (dList.length > 0 && !districtId) {
+        setDistrictId(dList[0].id);
+      }
+    }).catch(console.error);
+  }, [districtId]);
 
   const { registerDealer } = useAuth();
   const navigate = useNavigate();
@@ -203,7 +205,10 @@ export function DealerRegisterPage() {
                 label="Operating District"
                 value={districtId}
                 onChange={(e) => setDistrictId(e.target.value)}
-                options={SEED_DISTRICTS}
+                options={districts.map((d) => ({
+                  value: d.id,
+                  label: `${d.name} (${d.state})`,
+                }))}
                 required
               />
 

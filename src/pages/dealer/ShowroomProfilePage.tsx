@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DealerLayout } from '@/components/layout/DealerLayout';
 import { Button, Input, Select, Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/Toast';
-import { INITIAL_DISTRICTS } from '@/lib/catalogData';
+import { fetchDistricts } from '@/lib/catalogService';
+import { supabase } from '@/lib/supabase';
+import { District } from '@/types';
 import { Building2, Save, FileText, Phone, Mail, MapPin, Check } from 'lucide-react';
 
 const ALL_BRANDS = [
@@ -20,23 +22,43 @@ const ALL_BRANDS = [
 ];
 
 export function ShowroomProfilePage() {
-  const { dealership } = useAuth();
+  const { dealership, refreshProfile } = useAuth();
   const { toast } = useToast();
 
-  const [name, setName] = useState(dealership?.name || 'Apex Motors (Bengaluru)');
-  const [address, setAddress] = useState(
-    dealership?.address || '45 Outer Ring Road, Marathahalli, Bengaluru - 560037'
-  );
-  const [phone, setPhone] = useState(dealership?.contact_phone || '+91 98450 11223');
-  const [email, setEmail] = useState(dealership?.contact_email || 'contact@apexmotors-fake.com');
-  const [gstNumber, setGstNumber] = useState(dealership?.gst_number || '29AAAAA0000A1Z5');
-  const [mapLinkText, setMapLinkText] = useState(dealership?.map_link_text || 'https://maps.google.com/?q=Apex+Motors');
+  const [districts, setDistricts] = useState<District[]>([]);
+  const [name, setName] = useState(dealership?.name || '');
+  const [address, setAddress] = useState(dealership?.address || '');
+  const [phone, setPhone] = useState(dealership?.contact_phone || '');
+  const [email, setEmail] = useState(dealership?.contact_email || '');
+  const [gstNumber, setGstNumber] = useState(dealership?.gst_number || '');
+  const [mapLinkText, setMapLinkText] = useState(dealership?.map_link_text || '');
   const [selectedBrands, setSelectedBrands] = useState<string[]>(
-    dealership?.brands || ['Tata Motors', 'Hyundai']
+    dealership?.brands || ['Tata Motors']
   );
-  const [districtId, setDistrictId] = useState(
-    dealership?.district_id || 'd1111111-1111-1111-1111-111111111101'
-  );
+  const [districtId, setDistrictId] = useState(dealership?.district_id || '');
+  const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    fetchDistricts().then((dList) => {
+      setDistricts(dList);
+      if (dList.length > 0 && !districtId) {
+        setDistrictId(dealership?.district_id || dList[0].id);
+      }
+    }).catch(console.error);
+  }, [dealership?.district_id, districtId]);
+
+  useEffect(() => {
+    if (dealership) {
+      setName(dealership.name);
+      setAddress(dealership.address);
+      setPhone(dealership.contact_phone);
+      setEmail(dealership.contact_email);
+      setGstNumber(dealership.gst_number);
+      if (dealership.map_link_text) setMapLinkText(dealership.map_link_text);
+      if (dealership.district_id) setDistrictId(dealership.district_id);
+      if (dealership.brands) setSelectedBrands(dealership.brands);
+    }
+  }, [dealership]);
 
   const toggleBrand = (b: string) => {
     if (selectedBrands.includes(b)) {
@@ -48,12 +70,38 @@ export function ShowroomProfilePage() {
     }
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!dealership) return;
+    setIsLoading(true);
+
+    const { error } = await supabase
+      .from('dealerships')
+      .update({
+        name,
+        address,
+        contact_phone: phone,
+        contact_email: email,
+        gst_number: gstNumber,
+        map_link_text: mapLinkText,
+        district_id: districtId,
+        brands: selectedBrands,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', dealership.id);
+
+    setIsLoading(false);
+
+    if (error) {
+      toast({ type: 'error', title: 'Update Failed', message: error.message });
+      return;
+    }
+
+    await refreshProfile();
     toast({
       type: 'success',
       title: 'Showroom Profile Saved',
-      message: 'Dealership credentials and operational territories updated.',
+      message: 'Showroom details and brand authorization matrix updated.',
     });
   };
 
@@ -117,7 +165,7 @@ export function ShowroomProfilePage() {
                 label="Primary Operating District"
                 value={districtId}
                 onChange={(e) => setDistrictId(e.target.value)}
-                options={INITIAL_DISTRICTS.map((d) => ({
+                options={districts.map((d) => ({
                   value: d.id,
                   label: `${d.name} (${d.state})`,
                 }))}
@@ -173,7 +221,7 @@ export function ShowroomProfilePage() {
             </CardContent>
           </Card>
 
-          <Button type="submit" variant="primary" size="lg" leftIcon={<Save className="w-4 h-4" />}>
+          <Button type="submit" variant="primary" size="lg" isLoading={isLoading} leftIcon={<Save className="w-4 h-4" />}>
             Save Showroom Profile
           </Button>
         </form>

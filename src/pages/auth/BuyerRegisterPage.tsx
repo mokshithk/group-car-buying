@@ -1,32 +1,31 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { Button, Input, Select, Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui';
+import { fetchDistricts } from '@/lib/catalogService';
+import { District } from '@/types';
 import { Car, Lock, Mail, User, Phone, MapPin, ArrowRight, CheckCircle2 } from 'lucide-react';
 
-const SEED_DISTRICTS = [
-  { value: 'd1111111-1111-1111-1111-111111111101', label: 'Bengaluru Urban (Karnataka)' },
-  { value: 'd1111111-1111-1111-1111-111111111102', label: 'Bengaluru Rural (Karnataka)' },
-  { value: 'd1111111-1111-1111-1111-111111111103', label: 'Mysuru (Karnataka)' },
-  { value: 'd1111111-1111-1111-1111-111111111104', label: 'Dakshina Kannada (Karnataka)' },
-  { value: 'd1111111-1111-1111-1111-111111111105', label: 'Mumbai City (Maharashtra)' },
-  { value: 'd1111111-1111-1111-1111-111111111106', label: 'Pune (Maharashtra)' },
-  { value: 'd1111111-1111-1111-1111-111111111108', label: 'Chennai (Tamil Nadu)' },
-  { value: 'd1111111-1111-1111-1111-111111111110', label: 'Hyderabad (Telangana)' },
-  { value: 'd1111111-1111-1111-1111-111111111111', label: 'Central Delhi (Delhi)' },
-  { value: 'd1111111-1111-1111-1111-111111111112', label: 'Gurugram (Haryana)' },
-];
-
 export function BuyerRegisterPage() {
+  const [districts, setDistricts] = useState<District[]>([]);
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [districtId, setDistrictId] = useState(SEED_DISTRICTS[0].value);
+  const [districtId, setDistrictId] = useState('');
   const [password, setPassword] = useState('');
   const [consentShareDetails, setConsentShareDetails] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSuccessUnconfirmed, setIsSuccessUnconfirmed] = useState(false);
+
+  useEffect(() => {
+    fetchDistricts().then((dList) => {
+      setDistricts(dList);
+      if (dList.length > 0 && !districtId) {
+        setDistrictId(dList[0].id);
+      }
+    }).catch(console.error);
+  }, [districtId]);
 
   const { registerBuyer } = useAuth();
   const navigate = useNavigate();
@@ -157,7 +156,10 @@ export function BuyerRegisterPage() {
                   label="Your District (Crucial for Group Matching)"
                   value={districtId}
                   onChange={(e) => setDistrictId(e.target.value)}
-                  options={SEED_DISTRICTS}
+                  options={districts.map((d) => ({
+                    value: d.id,
+                    label: `${d.name} (${d.state})`,
+                  }))}
                   required
                 />
                 <p className="text-[11px] text-slate-500 flex items-center gap-1">

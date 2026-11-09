@@ -4,7 +4,7 @@ import { DealerLayout } from '@/components/layout/DealerLayout';
 import { Button, Badge, Card } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import { fetchGroupsForDistrict } from '@/lib/groupService';
-import { getLocalBookings, getLocalInterests } from '@/lib/bookingService';
+import { fetchDealerBookings, fetchDealerInterests } from '@/lib/bookingService';
 import { formatINR } from '@/lib/formatters';
 import { Group } from '@/types';
 import {
@@ -36,16 +36,22 @@ export function DealerDashboardPage() {
       );
       setEligibleGroups(visible);
 
-      const leads = getLocalInterests();
-      setTotalLeads(leads.length);
-
-      const bks = getLocalBookings();
-      setTotalBookings(bks.length);
+      if (dealership) {
+        const [leads, bks] = await Promise.all([
+          fetchDealerInterests(dealership.id),
+          fetchDealerBookings(dealership.id),
+        ]);
+        setTotalLeads(leads.length);
+        setTotalBookings(bks.length);
+      } else {
+        setTotalLeads(0);
+        setTotalBookings(0);
+      }
 
       setIsLoading(false);
     }
     load();
-  }, [districtId]);
+  }, [districtId, dealership]);
 
   return (
     <DealerLayout>

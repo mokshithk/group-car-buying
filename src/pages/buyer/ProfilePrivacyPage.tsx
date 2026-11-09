@@ -1,25 +1,44 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { BuyerLayout } from '@/components/layout/BuyerLayout';
 import { Button, Input, Select, Card, CardHeader, CardTitle, CardDescription, CardContent, Modal } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/Toast';
-import { INITIAL_DISTRICTS } from '@/lib/catalogData';
-import { getLocalBookings, getLocalInterests } from '@/lib/bookingService';
+import { fetchDistricts } from '@/lib/catalogService';
+import { fetchBuyerBookings } from '@/lib/bookingService';
 import { getWishlist, getBuyerPreferences } from '@/lib/groupService';
+import { supabase } from '@/lib/supabase';
+import { District } from '@/types';
 import { Shield, User, Lock, Download, Trash2, AlertTriangle } from 'lucide-react';
 
 export function ProfilePrivacyPage() {
-  const { user, profile, logout } = useAuth();
+  const { user, profile, refreshProfile, logout } = useAuth();
   const { toast } = useToast();
 
-  const [fullName, setFullName] = useState(profile?.full_name || 'Rahul Sharma');
-  const [phone, setPhone] = useState(profile?.phone || '+91 98765 43210');
-  const [districtId, setDistrictId] = useState(
-    profile?.district_id || 'd1111111-1111-1111-1111-111111111101'
-  );
+  const [districts, setDistricts] = useState<District[]>([]);
+  const [fullName, setFullName] = useState(profile?.full_name || '');
+  const [phone, setPhone] = useState(profile?.phone || '');
+  const [districtId, setDistrictId] = useState(profile?.district_id || '');
   const [consentShareDetails, setConsentShareDetails] = useState(
     profile?.consent_share_details ?? true
   );
+
+  useEffect(() => {
+    fetchDistricts().then((dList) => {
+      setDistricts(dList);
+      if (dList.length > 0 && !districtId) {
+        setDistrictId(profile?.district_id || dList[0].id);
+      }
+    }).catch(console.error);
+  }, [profile?.district_id, districtId]);
+
+  useEffect(() => {
+    if (profile) {
+      setFullName(profile.full_name);
+      setPhone(profile.phone);
+      if (profile.district_id) setDistrictId(profile.district_id);
+      setConsentShareDetails(profile.consent_share_details);
+    }
+  }, [profile]);
 
   // Password change state
   const [newPassword, setNewPassword] = useState('');
@@ -29,8 +48,27 @@ export function ProfilePrivacyPage() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const handleUpdateProfile = (e: React.FormEvent) => {
+  const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) return;
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        full_name: fullName,
+        phone,
+        district_id: districtId,
+        consent_share_details: consentShareDetails,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', user.id);
+
+    if (error) {
+      toast({ type: 'error', title: 'Update Failed', message: error.message });
+      return;
+    }
+
+    await refreshProfile();
     toast({
       type: 'success',
       title: 'Profile Updated',
@@ -38,30 +76,42 @@ export function ProfilePrivacyPage() {
     });
   };
 
-  const handleChangePassword = (e: React.FormEvent) => {
+  const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (newPassword.length < 6) {
-      toast({ type: 'error', title: 'Password must be at least 6 characters' });
+    if (newPassword.length < 8) {
+      toast({ type: 'error', title: 'Password must be at least 8 characters' });
       return;
     }
     if (newPassword !== confirmPassword) {
       toast({ type: 'error', title: 'Passwords do not match' });
       return;
     }
+
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) {
+      toast({ type: 'error', title: 'Password Update Failed', message: error.message });
+      return;
+    }
+
     toast({ type: 'success', title: 'Password Changed Successfully' });
     setNewPassword('');
     setConfirmPassword('');
   };
 
   // Download My Data (Section 3)
-  const handleDownloadData = () => {
+  const handleDownloadData = async () => {
     if (!user) return;
+    const [bookings, wishlist, preferences] = await Promise.all([
+      fetchBuyerBookings(user.id),
+      getWishlist(user.id),
+      getBuyerPreferences(user.id),
+    ]);
+
     const userData = {
       profile,
-      bookings: getLocalBookings(),
-      interests: getLocalInterests(),
-      wishlist: getWishlist(user.id),
-      preferences: getBuyerPreferences(user.id),
+      bookings,
+      wishlist,
+      preferences,
       exportTimestamp: new Date().toISOString(),
     };
 
@@ -141,7 +191,7 @@ export function ProfilePrivacyPage() {
                 label="Registered District"
                 value={districtId}
                 onChange={(e) => setDistrictId(e.target.value)}
-                options={INITIAL_DISTRICTS.map((d) => ({
+                options={districts.map((d) => ({
                   value: d.id,
                   label: `${d.name} (${d.state})`,
                 }))}

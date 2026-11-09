@@ -52,9 +52,9 @@ export function OffersComparisonPage() {
     load();
   }, [id]);
 
-  const handleOpenBreakdown = (q: Quotation) => {
+  const handleOpenBreakdown = async (q: Quotation) => {
     setSelectedQuoteForBreakdown(q);
-    const versions = fetchPriceHistory(q.id);
+    const versions = await fetchPriceHistory(q.id);
     setQuoteVersions(versions);
   };
 

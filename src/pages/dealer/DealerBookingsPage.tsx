@@ -1,10 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { DealerLayout } from '@/components/layout/DealerLayout';
 import { Button, Badge, Card, Modal } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/Toast';
 import {
-  getLocalBookings,
+  fetchDealerBookings,
   cancelBookingByDealerFault,
   confirmDelivery,
 } from '@/lib/bookingService';
@@ -31,20 +31,20 @@ export function DealerBookingsPage() {
   const [cancelTarget, setCancelTarget] = useState<Booking | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
 
-  const loadBookings = () => {
+  const loadBookings = useCallback(async () => {
+    if (!dealership) {
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
-    const all = getLocalBookings();
-    // Dealers only see bookings for their own showroom (Section 2 & 5)
-    const myBookings = all.filter(
-      (b) => b.dealership_id === dealership?.id || all.length <= 2
-    );
+    const myBookings = await fetchDealerBookings(dealership.id);
     setBookings(myBookings);
     setIsLoading(false);
-  };
+  }, [dealership]);
 
   useEffect(() => {
     loadBookings();
-  }, [dealership]);
+  }, [loadBookings]);
 
   const handleCancelDealerFault = async () => {
     if (!cancelTarget) return;

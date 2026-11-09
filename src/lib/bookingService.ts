@@ -1,82 +1,106 @@
-import { Booking, PriceSnapshot, Interest, Quotation, Group, DealerRating, Report } from '@/types';
-import { leaveGroup } from './groupService';
-import { refundPayment } from './paymentService';
+import { Booking, PriceSnapshot, Interest, Quotation, Group } from '@/types';
+import { supabase, isSupabaseConfigured } from './supabase';
+import { refundPayment, createPayment } from './paymentService';
 
-const LOCAL_BOOKINGS_KEY = 'autogroup_local_bookings';
-const LOCAL_INTERESTS_KEY = 'autogroup_local_interests';
-const LOCAL_RATINGS_KEY = 'autogroup_local_ratings';
-const LOCAL_REPORTS_KEY = 'autogroup_local_reports';
+/**
+ * Booking Service: Real Supabase implementation
+ * Implements expressions of interest, locked-price bookings, cancellations, delivery and reviews.
+ * No mock arrays or in-memory fallbacks.
+ */
 
-export function getLocalBookings(): Booking[] {
-  const saved = localStorage.getItem(LOCAL_BOOKINGS_KEY);
-  if (!saved) return [];
-  try {
-    return JSON.parse(saved);
-  } catch {
+export async function fetchBuyerBookings(buyerId: string): Promise<Booking[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('*, dealership:dealerships(*), quotation:quotations(*), group:groups(*, variant:variants(*, model:models(*, manufacturer:manufacturers(*))))')
+    .eq('buyer_id', buyerId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching buyer bookings:', error);
     return [];
   }
+
+  return (data || []) as Booking[];
 }
 
-export function saveLocalBookings(bookings: Booking[]): void {
-  localStorage.setItem(LOCAL_BOOKINGS_KEY, JSON.stringify(bookings));
-}
+export async function fetchDealerBookings(dealershipId: string): Promise<Booking[]> {
+  if (!isSupabaseConfigured()) return [];
 
-export function getLocalInterests(): Interest[] {
-  const saved = localStorage.getItem(LOCAL_INTERESTS_KEY);
-  if (!saved) return [];
-  try {
-    return JSON.parse(saved);
-  } catch {
+  const { data, error } = await supabase
+    .from('bookings')
+    .select('*, buyer:profiles(*), quotation:quotations(*), group:groups(*, variant:variants(*, model:models(*)))')
+    .eq('dealership_id', dealershipId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching dealer bookings:', error);
     return [];
   }
+
+  return (data || []) as Booking[];
 }
 
-export function saveLocalInterests(interests: Interest[]): void {
-  localStorage.setItem(LOCAL_INTERESTS_KEY, JSON.stringify(interests));
+export async function fetchDealerInterests(dealershipId: string): Promise<Interest[]> {
+  if (!isSupabaseConfigured()) return [];
+
+  const { data, error } = await supabase
+    .from('interests')
+    .select('*, buyer:profiles(*), quotation:quotations(*)')
+    .eq('dealership_id', dealershipId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching dealer interests:', error);
+    return [];
+  }
+
+  return (data || []) as Interest[];
 }
 
 /**
  * 1. Express Interest Flow ("I'm interested")
- * Shares buyer contact with the dealership and notifies dealer.
+ * Shares buyer contact with the dealership.
  */
 export async function expressInterest(
   quotation: Quotation,
   _group: Group,
   buyerId: string,
-  buyerName: string,
-  buyerPhone: string
-): Promise<{ success: boolean; interestId: string }> {
-  const interests = getLocalInterests();
-  const existing = interests.find(
-    (i) => i.quotation_id === quotation.id && i.user_id === buyerId
-  );
+  _buyerName: string,
+  _buyerPhone: string
+): Promise<{ success: boolean; interestId?: string; error?: string }> {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase client is not configured.');
+  }
+
+  const { data: existing } = await supabase
+    .from('interests')
+    .select('id')
+    .eq('quotation_id', quotation.id)
+    .eq('user_id', buyerId)
+    .maybeSingle();
 
   if (existing) {
     return { success: true, interestId: existing.id };
   }
 
-  const newInterest: Interest = {
-    id: 'int-' + Math.random().toString(36).substring(2, 9),
-    quotation_id: quotation.id,
-    user_id: buyerId,
-    dealership_id: quotation.dealership_id,
-    contacted: false,
-    created_at: new Date().toISOString(),
-    quotation,
-    buyer: {
-      id: buyerId,
-      role: 'buyer',
-      full_name: buyerName,
-      phone: buyerPhone,
-      consent_share_details: true,
-      created_at: '',
-      updated_at: '',
-    },
-  };
+  const { data, error } = await supabase
+    .from('interests')
+    .insert({
+      quotation_id: quotation.id,
+      user_id: buyerId,
+      dealership_id: quotation.dealership_id,
+      contacted: false,
+    })
+    .select()
+    .single();
 
-  interests.unshift(newInterest);
-  saveLocalInterests(interests);
-  return { success: true, interestId: newInterest.id };
+  if (error) {
+    return { success: false, error: error.message };
+  }
+
+  return { success: true, interestId: data.id };
 }
 
 /**
@@ -90,17 +114,18 @@ export async function executeBooking(
   buyerName: string,
   buyerPhone: string
 ): Promise<{ success: boolean; booking?: Booking; error?: string }> {
-  const bookings = getLocalBookings();
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase client is not configured.');
+  }
 
   // Prevent double-booking with same quote / active booking
-  const existingActive = bookings.find(
-    (b) =>
-      b.buyer_id === buyerId &&
-      b.quotation_id === quotation.id &&
-      b.status !== 'CANCELLED_BY_BUYER' &&
-      b.status !== 'CANCELLED_BY_DEALER' &&
-      b.status !== 'REFUNDED'
-  );
+  const { data: existingActive } = await supabase
+    .from('bookings')
+    .select('id')
+    .eq('buyer_id', buyerId)
+    .eq('quotation_id', quotation.id)
+    .in('status', ['PENDING', 'PAID', 'DELIVERED'])
+    .maybeSingle();
 
   if (existingActive) {
     return {
@@ -111,7 +136,7 @@ export async function executeBooking(
 
   const bookingAmount = 5000;
   const platformFee = 100;
-  const totalAmount = bookingAmount + platformFee; // ₹5,100 (< ₹10,000 check)
+  const totalAmount = bookingAmount + platformFee; // ₹5,100 (< ₹10,000 limit)
 
   if (totalAmount >= 10000) {
     return { success: false, error: 'Booking amount + fee exceeds platform limit of ₹10,000.' };
@@ -136,33 +161,61 @@ export async function executeBooking(
     timestamp: new Date().toISOString(),
   };
 
-  const newBooking: Booking = {
-    id: crypto.randomUUID(),
-    booking_code: bookingCode,
-    group_id: group.id,
-    quotation_id: quotation.id,
-    buyer_id: buyerId,
-    dealership_id: quotation.dealership_id,
-    booking_amount: bookingAmount,
-    platform_fee: platformFee,
-    total_amount: totalAmount,
-    status: 'PAID', // Payment succeeded
-    price_snapshot: priceSnapshot,
-    buyer_name: buyerName,
-    buyer_phone: buyerPhone,
-    created_at: new Date().toISOString(),
-    updated_at: new Date().toISOString(),
-    dealership: quotation.dealership,
-    group,
+  // Simulate payment processing
+  const paymentIntent = await createPayment({
+    bookingId: bookingCode,
+    amount: totalAmount,
+    method: 'UPI',
+  });
+
+  // Insert booking
+  const { data: bookingRow, error: bookingErr } = await supabase
+    .from('bookings')
+    .insert({
+      booking_code: bookingCode,
+      group_id: group.id,
+      quotation_id: quotation.id,
+      buyer_id: buyerId,
+      dealership_id: quotation.dealership_id,
+      booking_amount: bookingAmount,
+      platform_fee: platformFee,
+      total_amount: totalAmount,
+      status: 'PAID',
+      price_snapshot: priceSnapshot,
+      buyer_name: buyerName,
+      buyer_phone: buyerPhone,
+    })
+    .select()
+    .single();
+
+  if (bookingErr || !bookingRow) {
+    return { success: false, error: bookingErr?.message || 'Failed to record booking.' };
+  }
+
+  // Insert payment record
+  await supabase.from('payments').insert({
+    booking_id: bookingRow.id,
+    payment_id: paymentIntent.paymentId,
+    amount: totalAmount,
+    status: 'SUCCESS',
+    method: 'UPI',
+  });
+
+  // Business Rule: "After successful payment the buyer is automatically removed from the group (never before)."
+  await supabase
+    .from('group_members')
+    .update({ status: 'BOOKED', left_at: new Date().toISOString() })
+    .eq('group_id', group.id)
+    .eq('user_id', buyerId);
+
+  return {
+    success: true,
+    booking: {
+      ...bookingRow,
+      dealership: quotation.dealership,
+      group,
+    },
   };
-
-  bookings.unshift(newBooking);
-  saveLocalBookings(bookings);
-
-  // Business Rule (Section 2): "After successful payment the buyer is automatically removed from the group (never before)."
-  await leaveGroup(group.id, buyerId);
-
-  return { success: true, booking: newBooking };
 }
 
 /**
@@ -177,18 +230,35 @@ export async function cancelBookingByBuyer(
   retainedAmount: number;
   platformFeeNonRefunded: number;
 }> {
-  const bookings = getLocalBookings();
-  const b = bookings.find((item) => item.id === bookingId);
-  if (!b) throw new Error('Booking not found');
+  if (!isSupabaseConfigured()) throw new Error('Supabase is not configured');
+
+  const { data: b, error } = await supabase
+    .from('bookings')
+    .select('*')
+    .eq('id', bookingId)
+    .single();
+
+  if (error || !b) throw new Error('Booking not found');
 
   const retentionPercent = 0.05; // 5%
   const retainedAmount = Math.round(b.booking_amount * retentionPercent);
   const refundAmount = b.booking_amount - retainedAmount;
   const platformFeeNonRefunded = b.platform_fee;
 
-  b.status = 'CANCELLED_BY_BUYER';
-  b.updated_at = new Date().toISOString();
-  saveLocalBookings(bookings);
+  await supabase
+    .from('bookings')
+    .update({ status: 'CANCELLED_BY_BUYER', updated_at: new Date().toISOString() })
+    .eq('id', bookingId);
+
+  await supabase.from('refunds').insert({
+    booking_id: bookingId,
+    reason: 'BUYER_CANCEL',
+    booking_amount_refunded: refundAmount,
+    dealer_retained_amount: retainedAmount,
+    platform_fee_refunded: 0,
+    total_refunded: refundAmount,
+    status: 'PROCESSED',
+  });
 
   await refundPayment('pay_' + b.id, b.id, refundAmount, 'BUYER_CANCEL');
 
@@ -212,17 +282,34 @@ export async function cancelBookingByDealerFault(
   bookingAmountRefunded: number;
   platformFeeRefunded: number;
 }> {
-  const bookings = getLocalBookings();
-  const b = bookings.find((item) => item.id === bookingId);
-  if (!b) throw new Error('Booking not found');
+  if (!isSupabaseConfigured()) throw new Error('Supabase is not configured');
+
+  const { data: b, error } = await supabase
+    .from('bookings')
+    .select('*')
+    .eq('id', bookingId)
+    .single();
+
+  if (error || !b) throw new Error('Booking not found');
 
   const bookingAmountRefunded = b.booking_amount;
   const platformFeeRefunded = b.platform_fee;
   const totalRefunded = bookingAmountRefunded + platformFeeRefunded;
 
-  b.status = 'CANCELLED_BY_DEALER';
-  b.updated_at = new Date().toISOString();
-  saveLocalBookings(bookings);
+  await supabase
+    .from('bookings')
+    .update({ status: 'CANCELLED_BY_DEALER', updated_at: new Date().toISOString() })
+    .eq('id', bookingId);
+
+  await supabase.from('refunds').insert({
+    booking_id: bookingId,
+    reason: 'DEALER_FAULT',
+    booking_amount_refunded: bookingAmountRefunded,
+    dealer_retained_amount: 0,
+    platform_fee_refunded: platformFeeRefunded,
+    total_refunded: totalRefunded,
+    status: 'PROCESSED',
+  });
 
   await refundPayment('pay_' + b.id, b.id, totalRefunded, 'DEALER_FAULT');
 
@@ -239,63 +326,60 @@ export async function cancelBookingByDealerFault(
  * Buyer confirms "I received my car" -> marked DELIVERED and unlocks dealer rating.
  */
 export async function confirmDelivery(bookingId: string): Promise<boolean> {
-  const bookings = getLocalBookings();
-  const b = bookings.find((item) => item.id === bookingId);
-  if (!b) return false;
+  if (!isSupabaseConfigured()) return false;
 
-  b.status = 'DELIVERED';
-  b.delivered_at = new Date().toISOString();
-  b.updated_at = new Date().toISOString();
-  saveLocalBookings(bookings);
-  return true;
+  const { error } = await supabase
+    .from('bookings')
+    .update({
+      status: 'DELIVERED',
+      delivered_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', bookingId);
+
+  return !error;
 }
 
 /**
  * 6. Dealer Rating & Review:
  */
-export function submitDealerRating(
+export async function submitDealerRating(
   bookingId: string,
   dealershipId: string,
   buyerId: string,
   rating: number,
   review: string
-): void {
-  const saved = localStorage.getItem(LOCAL_RATINGS_KEY);
-  const ratings: DealerRating[] = saved ? JSON.parse(saved) : [];
+): Promise<boolean> {
+  if (!isSupabaseConfigured()) return false;
 
-  ratings.unshift({
-    id: 'rate-' + Math.random().toString(36).substring(2, 9),
+  const { error } = await supabase.from('dealer_ratings').insert({
     booking_id: bookingId,
     dealership_id: dealershipId,
     buyer_id: buyerId,
     rating,
     review,
-    created_at: new Date().toISOString(),
   });
 
-  localStorage.setItem(LOCAL_RATINGS_KEY, JSON.stringify(ratings));
+  return !error;
 }
 
 /**
  * 7. Report Dealer ("did not honor price", etc.)
  */
-export function submitDealerReport(
+export async function submitDealerReport(
   dealershipId: string,
   buyerId: string,
   reason: string,
   details: string
-): void {
-  const saved = localStorage.getItem(LOCAL_REPORTS_KEY);
-  const reports: Report[] = saved ? JSON.parse(saved) : [];
+): Promise<boolean> {
+  if (!isSupabaseConfigured()) return false;
 
-  reports.unshift({
-    id: 'rep-' + Math.random().toString(36).substring(2, 9),
+  const { error } = await supabase.from('reports').insert({
     dealership_id: dealershipId,
     buyer_id: buyerId,
     reason,
     details,
-    created_at: new Date().toISOString(),
   });
 
-  localStorage.setItem(LOCAL_REPORTS_KEY, JSON.stringify(reports));
+  return !error;
 }

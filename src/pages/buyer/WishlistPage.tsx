@@ -5,7 +5,6 @@ import { Button, Card, Badge } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/Toast';
 import { getWishlist, toggleWishlist } from '@/lib/groupService';
-import { INITIAL_MODELS } from '@/lib/catalogData';
 import { formatINR } from '@/lib/formatters';
 import { Variant, Model } from '@/types';
 import { Bookmark, Trash2, ArrowRight, ExternalLink } from 'lucide-react';
@@ -20,34 +19,34 @@ export function WishlistPage() {
 
   useEffect(() => {
     if (!user) return;
-    if (addVariantId) {
-      toggleWishlist(addVariantId, user.id);
-      toast({
-        type: 'success',
-        title: 'Saved to Wishlist',
-        message: 'Variant added to your personal wishlist.',
-      });
-    }
-
-    const items = getWishlist(user.id);
-    const populated: { variant: Variant; model: Model }[] = [];
-
-    items.forEach((item) => {
-      for (const m of INITIAL_MODELS) {
-        const v = m.variants.find((variant) => variant.id === item.variant_id);
-        if (v) {
-          populated.push({ variant: v, model: m });
-          break;
-        }
+    async function load() {
+      if (!user) return;
+      if (addVariantId) {
+        await toggleWishlist(addVariantId, user.id);
+        toast({
+          type: 'success',
+          title: 'Saved to Wishlist',
+          message: 'Variant added to your personal wishlist.',
+        });
       }
-    });
 
-    setSavedVariants(populated);
+      const items = await getWishlist(user.id);
+      const populated: { variant: Variant; model: Model }[] = [];
+
+      items.forEach((item) => {
+        if (item.variant && (item.variant as any).model) {
+          populated.push({ variant: item.variant, model: (item.variant as any).model });
+        }
+      });
+
+      setSavedVariants(populated);
+    }
+    load();
   }, [user, addVariantId, toast]);
 
-  const handleRemove = (variantId: string) => {
+  const handleRemove = async (variantId: string) => {
     if (!user) return;
-    toggleWishlist(variantId, user.id);
+    await toggleWishlist(variantId, user.id);
     setSavedVariants((prev) => prev.filter((item) => item.variant.id !== variantId));
     toast({
       type: 'info',

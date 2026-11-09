@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { BuyerLayout } from '@/components/layout/BuyerLayout';
 import { Button, Card, CardHeader, CardTitle, CardContent, Badge } from '@/components/ui';
-import { getLocalBookings } from '@/lib/bookingService';
+import { supabase } from '@/lib/supabase';
 import { formatINR, formatDateTime } from '@/lib/formatters';
 import { Booking } from '@/types';
 import {
@@ -12,18 +12,48 @@ import {
   ShoppingBag,
   Printer,
   ShieldCheck,
+  Loader2,
 } from 'lucide-react';
 
 export function BookingConfirmationPage() {
   const { bookingId } = useParams<{ bookingId: string }>();
   const [booking, setBooking] = useState<Booking | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!bookingId) return;
-    const all = getLocalBookings();
-    const found = all.find((b) => b.id === bookingId) || all[0];
-    setBooking(found || null);
+    if (!bookingId) {
+      setIsLoading(false);
+      return;
+    }
+    async function load() {
+      try {
+        const { data, error } = await supabase
+          .from('bookings')
+          .select('*, dealership:dealerships(*), quotation:quotations(*), group:groups(*, variant:variants(*, model:models(*)))')
+          .eq('id', bookingId)
+          .maybeSingle();
+
+        if (!error && data) {
+          setBooking(data as Booking);
+        }
+      } catch (err) {
+        console.error('Error loading booking:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    load();
   }, [bookingId]);
+
+  if (isLoading) {
+    return (
+      <BuyerLayout>
+        <div className="py-20 flex justify-center">
+          <Loader2 className="w-8 h-8 text-brand-600 animate-spin" />
+        </div>
+      </BuyerLayout>
+    );
+  }
 
   if (!booking) {
     return (

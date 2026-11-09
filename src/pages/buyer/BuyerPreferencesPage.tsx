@@ -4,7 +4,8 @@ import { Button, Select, Card, CardHeader, CardTitle, CardDescription, CardConte
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/Toast';
 import { getBuyerPreferences, saveBuyerPreferences } from '@/lib/groupService';
-import { INITIAL_DISTRICTS } from '@/lib/catalogData';
+import { fetchDistricts } from '@/lib/catalogService';
+import { District } from '@/types';
 import { formatINR } from '@/lib/formatters';
 import { Sliders, Save, Check } from 'lucide-react';
 
@@ -15,21 +16,34 @@ export function BuyerPreferencesPage() {
   const { user, profile } = useAuth();
   const { toast } = useToast();
 
+  const [districts, setDistricts] = useState<District[]>([]);
   const [preferredBrands, setPreferredBrands] = useState<string[]>(['Tata Motors', 'Hyundai']);
   const [preferredFuels, setPreferredFuels] = useState<string[]>(['Petrol', 'Diesel']);
   const [budgetMax, setBudgetMax] = useState<number>(2000000);
   const [districtId, setDistrictId] = useState(
-    profile?.district_id || 'd1111111-1111-1111-1111-111111111101'
+    profile?.district_id || ''
   );
 
   useEffect(() => {
+    fetchDistricts()
+      .then((dList) => {
+        setDistricts(dList);
+        if (dList.length > 0 && !districtId) {
+          setDistrictId(profile?.district_id || dList[0].id);
+        }
+      })
+      .catch((err) => console.error('Error fetching districts:', err));
+
     if (!user) return;
-    const prefs = getBuyerPreferences(user.id);
-    if (prefs.preferred_brands) setPreferredBrands(prefs.preferred_brands);
-    if (prefs.preferred_fuel_types) setPreferredFuels(prefs.preferred_fuel_types);
-    if (prefs.budget_max) setBudgetMax(prefs.budget_max);
-    if (prefs.district_id) setDistrictId(prefs.district_id);
-  }, [user]);
+    getBuyerPreferences(user.id).then((prefs) => {
+      if (prefs) {
+        if (prefs.preferred_brands) setPreferredBrands(prefs.preferred_brands);
+        if (prefs.preferred_fuel_types) setPreferredFuels(prefs.preferred_fuel_types);
+        if (prefs.budget_max) setBudgetMax(prefs.budget_max);
+        if (prefs.district_id) setDistrictId(prefs.district_id);
+      }
+    });
+  }, [user, profile?.district_id, districtId]);
 
   const toggleBrand = (brand: string) => {
     if (preferredBrands.includes(brand)) {
@@ -47,18 +61,15 @@ export function BuyerPreferencesPage() {
     }
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
 
-    saveBuyerPreferences(user.id, {
-      id: 'pref-' + user.id,
-      user_id: user.id,
+    await saveBuyerPreferences(user.id, {
       district_id: districtId,
       preferred_brands: preferredBrands,
       preferred_fuel_types: preferredFuels,
       budget_max: budgetMax,
-      updated_at: new Date().toISOString(),
     });
 
     toast({
@@ -95,7 +106,7 @@ export function BuyerPreferencesPage() {
               <Select
                 value={districtId}
                 onChange={(e) => setDistrictId(e.target.value)}
-                options={INITIAL_DISTRICTS.map((d) => ({
+                options={districts.map((d) => ({
                   value: d.id,
                   label: `${d.name} (${d.state})`,
                 }))}
