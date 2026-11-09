@@ -36,6 +36,7 @@ import { DealerRatingsReportsPage } from '@/pages/dealer/DealerRatingsReportsPag
 import { DealerNotificationsPage } from '@/pages/dealer/DealerNotificationsPage';
 import { ShowroomProfilePage } from '@/pages/dealer/ShowroomProfilePage';
 import { StaffManagementPage } from '@/pages/dealer/StaffManagementPage';
+import { AdminDealersPage } from '@/pages/admin/AdminDealersPage';
 
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { SupabaseErrorScreen } from '@/components/common/SupabaseErrorScreen';
@@ -259,6 +260,16 @@ export default function App() {
                   element={
                     <ProtectedRoute allowedRoles={['dealer']}>
                       <StaffManagementPage />
+                    </ProtectedRoute>
+                  }
+                />
+
+                {/* Admin Protected Pages */}
+                <Route
+                  path="/admin/dealers"
+                  element={
+                    <ProtectedRoute allowedRoles={['admin']}>
+                      <AdminDealersPage />
                     </ProtectedRoute>
                   }
                 />
