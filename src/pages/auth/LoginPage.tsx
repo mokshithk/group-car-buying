@@ -155,6 +155,11 @@ export function LoginPage() {
                     Dealer Test Session
                   </Button>
                 </div>
+                <div className="mt-2.5 p-2 bg-slate-50 rounded-lg text-center text-[11px] text-slate-500">
+                  <span>Demo Buyer: <strong>buyer@example.com</strong> (any password)</span>
+                  <br />
+                  <span>Demo Dealer: <strong>dealer@example.com</strong> (any password)</span>
+                </div>
               </div>
             </div>
           </CardContent>
