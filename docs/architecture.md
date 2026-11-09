@@ -92,30 +92,29 @@ D:\group-car-buying
 │   │       ├── Toast.tsx
 │   │       └── Skeleton.tsx
 │   ├── context/
-│   │   └── AuthContext.tsx       # Auth provider, role switching, mock & Supabase state
-│   ├── data/
-│   │   └── catalogData.ts        # Comprehensive car specifications & variants data
+│   │   └── AuthContext.tsx       # Auth provider, role management, Supabase state
 │   ├── lib/
 │   │   ├── bookingService.ts     # Booking workflows, cancellation calculations
+│   │   ├── catalogService.ts     # Live Supabase queries for vehicles, variants & districts
 │   │   ├── formatters.ts         # Currency (INR) and date/time formatters
 │   │   ├── groupService.ts       # Group matching and visibility queries
 │   │   ├── paymentService.ts     # Exactly 3 simulated functions: create, verify, refund
 │   │   ├── quoteService.ts       # Quotation rankings, incomplete quote isolation
 │   │   └── supabase.ts           # Supabase client instantiation
 │   ├── pages/
-│   │   ├── auth/                 # Login, Buyer & Dealer Registration, Pending Screen
+│   │   ├── admin/                # Dealer verification hub (/admin/dealers)
+│   │   ├── auth/                 # Login, Register Chooser, Buyer/Dealer Reg, OTP, Password Reset
 │   │   ├── buyer/                # Dashboard, Find Groups, Group Detail, Offers, Bookings
-│   │   ├── dealer/               # Dashboard, Eligible Groups, Submit Quote, Leads, Bookings
+│   │   ├── dealer/               # Dashboard, Pending Approval, Status, Eligible Groups, Quotes
 │   │   └── public/               # Landing Page, Car Detail Page
 │   ├── types/
 │   │   └── database.ts           # TypeScript interfaces matching database schema
 │   ├── App.tsx                   # Main route configuration
 │   └── main.tsx                  # React entry point
 ├── supabase/
-│   ├── migrations/
-│   │   ├── 001_initial_schema.sql # Tables, triggers, visibility functions, views
-│   │   └── 002_rls_policies.sql   # Comprehensive row level security policies
-│   ├── seed.sql                  # Realistic demo data (cars, groups, quotes, dealerships)
+│   ├── migrations/               # Ordered SQL migrations (001 to 005)
+│   ├── seed.sql                  # Real catalog data (districts, manufacturers, models, variants)
+│   ├── seed_demo.sql             # Optional test data (sample dealerships, groups, quotes)
 │   └── RUN_ME_FIRST.md           # Migration instructions & dealer approval SQL snippet
 ├── tests/
 │   └── e2e.spec.ts               # End-to-end test suite

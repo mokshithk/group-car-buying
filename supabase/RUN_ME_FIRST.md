@@ -79,7 +79,7 @@ UPDATE public.dealerships
 SET status = 'VERIFIED',
     verified_at = NOW()
 WHERE showroom_name = 'Your Dealership Name'
-   OR owner_email = 'dealer@example.com';
+   OR owner_email = 'dealer@dealership.com';
 ```
 
 Verify the approval status:

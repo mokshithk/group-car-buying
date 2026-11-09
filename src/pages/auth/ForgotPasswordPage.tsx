@@ -315,7 +315,7 @@ export function ForgotPasswordPage() {
               <Input
                 label="Registered Email Address"
                 type="email"
-                placeholder="name@example.com"
+                placeholder="name@domain.com"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}

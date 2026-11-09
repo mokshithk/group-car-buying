@@ -12,7 +12,7 @@ export type GroupStatus =
   | 'CANCELLED'
   | 'EXPIRED';
 
-export type DealershipStatus = 'PENDING' | 'VERIFIED' | 'SUSPENDED';
+export type DealershipStatus = 'PENDING' | 'VERIFIED' | 'REJECTED' | 'SUSPENDED';
 
 export type DealerUserRole = 'owner' | 'staff';
 
@@ -93,6 +93,8 @@ export interface Dealership {
   contact_phone: string;
   contact_email: string;
   gst_number: string;
+  rejection_reason?: string;
+  verified_at?: string;
   map_link_text?: string;
   brands: string[]; // Manufacturer IDs or names
   districts: string[]; // Supported District IDs
