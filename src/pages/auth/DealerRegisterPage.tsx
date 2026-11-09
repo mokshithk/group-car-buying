@@ -34,6 +34,7 @@ export function DealerRegisterPage() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showOtp, setShowOtp] = useState(false);
+  const [devOtp, setDevOtp] = useState('');
 
   useEffect(() => {
     fetchDistricts().then((dList) => {
@@ -86,6 +87,7 @@ export function DealerRegisterPage() {
 
     if (res.success) {
       if (res.requiresEmailConfirmation) {
+        if (res.devOtp) setDevOtp(res.devOtp);
         setShowOtp(true);
       } else {
         navigate('/dealer/pending-approval', { replace: true });
@@ -113,6 +115,7 @@ export function DealerRegisterPage() {
             email={email}
             type="signup"
             title="Verify Dealership Account"
+            initialDevOtp={devOtp}
             onSuccess={async () => {
               await refreshProfile();
               navigate('/dealer/pending-approval', { replace: true });

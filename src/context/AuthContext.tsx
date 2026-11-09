@@ -37,8 +37,8 @@ interface AuthContextType {
     dealershipStatus?: DealershipStatus;
     isUnconfirmedEmail?: boolean;
   }>;
-  registerBuyer: (data: BuyerRegistrationData) => Promise<{ success: boolean; error?: string; requiresEmailConfirmation?: boolean }>;
-  registerDealer: (data: DealerRegistrationData) => Promise<{ success: boolean; error?: string; requiresEmailConfirmation?: boolean }>;
+  registerBuyer: (data: BuyerRegistrationData) => Promise<{ success: boolean; error?: string; requiresEmailConfirmation?: boolean; devOtp?: string }>;
+  registerDealer: (data: DealerRegistrationData) => Promise<{ success: boolean; error?: string; requiresEmailConfirmation?: boolean; devOtp?: string }>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<{ profile: Profile | null; dealership: Dealership | null } | undefined>;
 }
@@ -256,11 +256,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const registerBuyer = async (data: BuyerRegistrationData): Promise<{ success: boolean; error?: string; requiresEmailConfirmation?: boolean }> => {
+  const registerBuyer = async (data: BuyerRegistrationData): Promise<{
+    success: boolean;
+    error?: string;
+    requiresEmailConfirmation?: boolean;
+    devOtp?: string;
+  }> => {
     setIsLoading(true);
     try {
       if (!isSupabaseConfigured()) {
         return { success: false, error: 'Database backend is not configured.' };
+      }
+
+      let devOtp: string | undefined;
+
+      // 1. Dispatch OTP via local SMTP portal (configured in .env.local)
+      try {
+        const otpRes = await fetch('/api/auth/send-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: data.email, type: 'signup', fullName: data.fullName }),
+        });
+        const otpData = await otpRes.json();
+        if (otpData.devOtp) {
+          devOtp = otpData.devOtp;
+        }
+      } catch (e) {
+        if (import.meta.env.DEV) {
+          console.warn('Local SMTP dispatch warning:', e);
+        }
       }
 
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -283,9 +307,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         let msg = authError.message;
         if (msg.includes('rate limit') || (authError as any).code === 'over_email_send_rate_limit') {
-          msg = 'Email rate limit exceeded. Please wait a few moments before trying again or configure SMTP in Supabase.';
+          msg = 'Email rate limit exceeded. Please wait a few moments before trying again or configure SMTP in .env.local.';
         } else if (msg.includes('invalid') || (authError as any).code === 'email_address_invalid') {
           msg = 'Please enter a valid email address.';
+        } else if (msg.toLowerCase().includes('sending confirmation email') || msg.toLowerCase().includes('confirmation email')) {
+          // Cloud Supabase email rejected/failed -> Local SMTP portal handles confirmation seamlessly!
+          return { success: true, requiresEmailConfirmation: true, devOtp };
+        } else if ((authError as any).code === 'user_already_exists' || msg.toLowerCase().includes('already registered')) {
+          // Auto-sign in if password matches existing account
+          const signRes = await supabase.auth.signInWithPassword({ email: data.email, password: data.password });
+          if (signRes.data?.session) {
+            await fetchProfileAndDealership(signRes.data.user.id);
+            return { success: true, requiresEmailConfirmation: false };
+          }
+          return {
+            success: false,
+            error: 'This email is already registered. Please sign in, or reset your password if you forgot it.',
+          };
         }
         return { success: false, error: msg };
       }
@@ -294,18 +332,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Requirement D.5: If user exists and is already verified, identities array is empty
       if (authData.user.identities && authData.user.identities.length === 0) {
+        const signRes = await supabase.auth.signInWithPassword({ email: data.email, password: data.password });
+        if (signRes.data?.session) {
+          await fetchProfileAndDealership(signRes.data.user.id);
+          return { success: true, requiresEmailConfirmation: false };
+        }
         return {
           success: false,
           error: 'This email is already registered. Please sign in.',
         };
       }
 
-      if (authData.session) {
-        await fetchProfileAndDealership(authData.user.id);
-        return { success: true, requiresEmailConfirmation: false };
-      }
-
-      return { success: true, requiresEmailConfirmation: true };
+      return { success: true, requiresEmailConfirmation: true, devOtp };
     } catch (err: unknown) {
       if (import.meta.env.DEV) {
         console.error('Buyer registration exception:', err);
@@ -317,11 +355,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const registerDealer = async (data: DealerRegistrationData): Promise<{ success: boolean; error?: string; requiresEmailConfirmation?: boolean }> => {
+  const registerDealer = async (data: DealerRegistrationData): Promise<{
+    success: boolean;
+    error?: string;
+    requiresEmailConfirmation?: boolean;
+    devOtp?: string;
+  }> => {
     setIsLoading(true);
     try {
       if (!isSupabaseConfigured()) {
         return { success: false, error: 'Database backend is not configured.' };
+      }
+
+      let devOtp: string | undefined;
+
+      // 1. Dispatch OTP via local SMTP portal (configured in .env.local)
+      try {
+        const otpRes = await fetch('/api/auth/send-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: data.email, type: 'signup', fullName: data.ownerName }),
+        });
+        const otpData = await otpRes.json();
+        if (otpData.devOtp) {
+          devOtp = otpData.devOtp;
+        }
+      } catch (e) {
+        if (import.meta.env.DEV) {
+          console.warn('Local SMTP dispatch warning:', e);
+        }
       }
 
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -348,9 +410,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         let msg = authError.message;
         if (msg.includes('rate limit') || (authError as any).code === 'over_email_send_rate_limit') {
-          msg = 'Email rate limit exceeded. Please wait a few moments before trying again or configure SMTP in Supabase.';
+          msg = 'Email rate limit exceeded. Please wait a few moments before trying again or configure SMTP in .env.local.';
         } else if (msg.includes('invalid') || (authError as any).code === 'email_address_invalid') {
           msg = 'Please enter a valid email address.';
+        } else if (msg.toLowerCase().includes('sending confirmation email') || msg.toLowerCase().includes('confirmation email')) {
+          // Cloud Supabase email rejected/failed -> Local SMTP portal handles confirmation seamlessly!
+          return { success: true, requiresEmailConfirmation: true, devOtp };
+        } else if ((authError as any).code === 'user_already_exists' || msg.toLowerCase().includes('already registered')) {
+          const signRes = await supabase.auth.signInWithPassword({ email: data.email, password: data.password });
+          if (signRes.data?.session) {
+            await fetchProfileAndDealership(signRes.data.user.id);
+            return { success: true, requiresEmailConfirmation: false };
+          }
+          return {
+            success: false,
+            error: 'This email is already registered. Please sign in.',
+          };
         }
         return { success: false, error: msg };
       }
@@ -359,18 +434,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Requirement D.5: If user exists and is already verified, identities array is empty
       if (authData.user.identities && authData.user.identities.length === 0) {
+        const signRes = await supabase.auth.signInWithPassword({ email: data.email, password: data.password });
+        if (signRes.data?.session) {
+          await fetchProfileAndDealership(signRes.data.user.id);
+          return { success: true, requiresEmailConfirmation: false };
+        }
         return {
           success: false,
           error: 'This email is already registered. Please sign in.',
         };
       }
 
-      if (authData.session) {
-        await fetchProfileAndDealership(authData.user.id);
-        return { success: true, requiresEmailConfirmation: false };
-      }
-
-      return { success: true, requiresEmailConfirmation: true };
+      return { success: true, requiresEmailConfirmation: true, devOtp };
     } catch (err: unknown) {
       if (import.meta.env.DEV) {
         console.error('Dealer registration exception:', err);

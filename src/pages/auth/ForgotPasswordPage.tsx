@@ -13,6 +13,7 @@ export function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [devOtp, setDevOtp] = useState('');
   const [isNotRegistered, setIsNotRegistered] = useState(false);
   const [requestTimestamps, setRequestTimestamps] = useState<number[]>([]);
 
@@ -77,19 +78,27 @@ export function ForgotPasswordPage() {
         }
       }
 
-      // 2. Dispatch recovery code via Supabase Auth
-      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(cleanEmail);
-
-      if (resetErr) {
-        const msg = resetErr.message.toLowerCase();
-        if (msg.includes('rate limit')) {
-          setError('Too many requests. Please wait a few moments before requesting another code.');
-          setIsLoading(false);
-          return;
+      // 2. Dispatch recovery code via local SMTP portal (configured in .env.local)
+      let recoveryDevOtp = '';
+      try {
+        const otpRes = await fetch('/api/auth/send-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: cleanEmail, type: 'recovery' }),
+        });
+        const otpData = await otpRes.json();
+        if (otpData.devOtp) {
+          recoveryDevOtp = otpData.devOtp;
         }
-      }
+      } catch (_) {}
+
+      // Optional attempt via Supabase (non-blocking if cloud SMTP is unconfigured)
+      try {
+        await supabase.auth.resetPasswordForEmail(cleanEmail);
+      } catch (_) {}
 
       // Advance to OTP verification step
+      setDevOtp(recoveryDevOtp);
       setStep('otp');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unable to dispatch recovery code.';
@@ -159,6 +168,7 @@ export function ForgotPasswordPage() {
             type="recovery"
             title="Verify Recovery Code"
             description={`We sent a 6-digit recovery code to ${email}`}
+            initialDevOtp={devOtp}
             onSuccess={() => {
               setStep('new-password');
             }}

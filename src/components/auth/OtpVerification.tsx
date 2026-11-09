@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui';
-import { Mail, ArrowRight, RefreshCw, ArrowLeft, ShieldCheck, AlertCircle } from 'lucide-react';
+import { Mail, ArrowRight, RefreshCw, ArrowLeft, ShieldCheck, AlertCircle, KeyRound, Sparkles } from 'lucide-react';
 
 interface OtpVerificationProps {
   email: string;
   type: 'signup' | 'recovery';
   title?: string;
   description?: string;
+  initialDevOtp?: string;
   onSuccess: () => void | Promise<void>;
   onChangeEmail?: () => void;
 }
@@ -17,6 +18,7 @@ export function OtpVerification({
   type,
   title,
   description,
+  initialDevOtp,
   onSuccess,
   onChangeEmail,
 }: OtpVerificationProps) {
@@ -26,6 +28,8 @@ export function OtpVerification({
   const [isResending, setIsResending] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(60);
   const [resendNotice, setResendNotice] = useState('');
+  const [devCode, setDevCode] = useState<string | null>(initialDevOtp || null);
+  const [isSmtpConfigured, setIsSmtpConfigured] = useState<boolean | null>(null);
 
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -36,7 +40,32 @@ export function OtpVerification({
     }
   }, []);
 
-  // 2. 60-second cooldown countdown timer
+  // 2. Query SMTP status and dispatch initial code if not provided
+  useEffect(() => {
+    fetch('/api/auth/smtp-status')
+      .then((r) => r.json())
+      .then((data) => {
+        setIsSmtpConfigured(Boolean(data.configured));
+      })
+      .catch(() => {});
+
+    if (!initialDevOtp && email) {
+      fetch('/api/auth/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, type }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.devOtp) {
+            setDevCode(data.devOtp);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [email, type, initialDevOtp]);
+
+  // 3. 60-second cooldown countdown timer
   useEffect(() => {
     if (resendCooldown <= 0) return;
     const interval = setInterval(() => {
@@ -45,7 +74,7 @@ export function OtpVerification({
     return () => clearInterval(interval);
   }, [resendCooldown]);
 
-  // 3. Auto-detect email link confirmation (if user clicks the link in their email)
+  // 4. Auto-detect email link confirmation (if user clicks the link in their email)
   useEffect(() => {
     const {
       data: { subscription },
@@ -63,7 +92,6 @@ export function OtpVerification({
 
   // Handle individual digit change
   const handleChange = (index: number, value: string) => {
-    // Only accept numeric digit
     const cleaned = value.replace(/\D/g, '');
     if (!cleaned) {
       const next = [...digits];
@@ -128,6 +156,23 @@ export function OtpVerification({
     setIsVerifying(true);
 
     try {
+      // 1. First check local SMTP verification endpoint
+      const portalRes = await fetch('/api/auth/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, code: token, type }),
+      });
+      const portalData = await portalRes.json();
+      if (portalData.success) {
+        await onSuccess();
+        return;
+      }
+    } catch (_) {
+      // Fall through to Supabase if endpoint fails
+    }
+
+    try {
+      // 2. Fallback to Supabase verifyOtp
       const { error: verifyErr } = await supabase.auth.verifyOtp({
         email,
         token,
@@ -166,31 +211,24 @@ export function OtpVerification({
     setResendNotice('');
 
     try {
-      let resendErr = null;
-      if (type === 'recovery') {
-        const { error: resetErr } = await supabase.auth.resetPasswordForEmail(email);
-        resendErr = resetErr;
-      } else {
-        const { error: signupResendErr } = await supabase.auth.resend({
-          type: 'signup',
-          email,
-        });
-        resendErr = signupResendErr;
+      // 1. Dispatch via local SMTP portal
+      const res = await fetch('/api/auth/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, type }),
+      });
+      const data = await res.json();
+
+      if (data.devOtp) {
+        setDevCode(data.devOtp);
+        setResendNotice('Fresh verification code generated.');
+      } else if (data.channel === 'smtp' || data.success) {
+        setResendNotice('A fresh 6-digit verification code has been sent to your email.');
       }
 
-      if (resendErr) {
-        let msg = resendErr.message;
-        if (msg.toLowerCase().includes('rate limit')) {
-          msg = 'Resend rate limit exceeded. Please check your spam folder or wait before requesting again.';
-        }
-        setError(msg);
-      } else {
-        setResendCooldown(60);
-        setResendNotice('A fresh 6-digit code has been sent to your email.');
-        // Reset inputs and focus first box
-        setDigits(['', '', '', '', '', '']);
-        inputRefs.current[0]?.focus();
-      }
+      setResendCooldown(60);
+      setDigits(['', '', '', '', '', '']);
+      inputRefs.current[0]?.focus();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to resend code.';
       setError(msg);
@@ -213,7 +251,7 @@ export function OtpVerification({
         <CardDescription className="text-xs text-slate-600 max-w-sm mx-auto leading-relaxed mt-1">
           {description || (
             <>
-              We sent a verification email to <strong className="text-slate-900">{email}</strong>. Enter the 6-digit code or click the confirmation link in your email.
+              We sent a verification email with a 6-digit code to <strong className="text-slate-900">{email}</strong>.
               {onChangeEmail && (
                 <button
                   type="button"
@@ -228,7 +266,38 @@ export function OtpVerification({
         </CardDescription>
       </CardHeader>
 
-      <CardContent className="space-y-6 pt-4">
+      <CardContent className="space-y-5 pt-3">
+        {/* Dev Mode Banner (shown when SMTP credentials are not configured in .env.local) */}
+        {devCode && (
+          <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-center justify-between shadow-subtle">
+            <div className="flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-amber-600 shrink-0" />
+              <div>
+                <span className="font-semibold text-amber-800">[Dev OTP]</span> Code:{' '}
+                <strong className="font-mono text-sm tracking-wider text-amber-950 font-bold">{devCode}</strong>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                const split = devCode.split('');
+                setDigits(split);
+                handleVerify(undefined, devCode);
+              }}
+              className="px-2.5 py-1 bg-amber-200 hover:bg-amber-300 text-amber-900 font-semibold rounded-lg text-xs transition-colors flex items-center gap-1"
+            >
+              <Sparkles className="w-3 h-3" /> Auto-Fill
+            </button>
+          </div>
+        )}
+
+        {isSmtpConfigured && !devCode && (
+          <div className="p-2.5 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-800 flex items-center gap-2">
+            <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />
+            <span>Dispatched via Gmail SMTP (.env.local)</span>
+          </div>
+        )}
+
         {error && (
           <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-medium text-rose-700 flex items-start gap-2">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />

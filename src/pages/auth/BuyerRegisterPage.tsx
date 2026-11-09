@@ -18,6 +18,7 @@ export function BuyerRegisterPage() {
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [showOtp, setShowOtp] = useState(false);
+  const [devOtp, setDevOtp] = useState('');
 
   useEffect(() => {
     fetchDistricts().then((dList) => {
@@ -59,6 +60,7 @@ export function BuyerRegisterPage() {
 
     if (res.success) {
       if (res.requiresEmailConfirmation) {
+        if (res.devOtp) setDevOtp(res.devOtp);
         setShowOtp(true);
       } else {
         navigate(redirectUrl || '/buyer/dashboard', { replace: true });
@@ -86,6 +88,7 @@ export function BuyerRegisterPage() {
             email={email}
             type="signup"
             title="Verify Buyer Account"
+            initialDevOtp={devOtp}
             onSuccess={async () => {
               await refreshProfile();
               navigate(redirectUrl || '/buyer/dashboard', { replace: true });
