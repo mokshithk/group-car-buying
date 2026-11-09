@@ -259,16 +259,28 @@ export function DealerRegisterPage() {
                 </div>
               </div>
 
-              <Input
-                label="Create Account Password"
-                type="password"
-                placeholder="Minimum 6 characters"
-                required
-                minLength={6}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                leftIcon={<Lock className="w-4 h-4" />}
-              />
+              <div className="space-y-1.5">
+                <Input
+                  label="Create Account Password"
+                  type="password"
+                  placeholder="Minimum 8 characters"
+                  required
+                  minLength={8}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  leftIcon={<Lock className="w-4 h-4" />}
+                />
+                {password.length > 0 && (
+                  <div className="flex items-center gap-3 text-[11px] pt-1">
+                    <span className={password.length >= 8 ? 'text-emerald-600 font-medium' : 'text-slate-400'}>
+                      {password.length >= 8 ? '✓' : '○'} 8+ characters
+                    </span>
+                    <span className={/[a-zA-Z]/.test(password) && /[0-9!@#$%^&*]/.test(password) ? 'text-emerald-600 font-medium' : 'text-slate-400'}>
+                      {/[a-zA-Z]/.test(password) && /[0-9!@#$%^&*]/.test(password) ? '✓' : '○'} Letters & numbers/symbols
+                    </span>
+                  </div>
+                )}
+              </div>
 
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs text-slate-600 leading-relaxed">
                 <CheckSquare className="w-4 h-4 text-brand-600 inline mr-1.5 shrink-0" />
