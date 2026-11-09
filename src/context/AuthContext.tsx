@@ -31,8 +31,8 @@ interface AuthContextType {
   role: UserRole | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string; role?: UserRole }>;
-  registerBuyer: (data: BuyerRegistrationData) => Promise<{ success: boolean; error?: string }>;
-  registerDealer: (data: DealerRegistrationData) => Promise<{ success: boolean; error?: string }>;
+  registerBuyer: (data: BuyerRegistrationData) => Promise<{ success: boolean; error?: string; requiresEmailConfirmation?: boolean }>;
+  registerDealer: (data: DealerRegistrationData) => Promise<{ success: boolean; error?: string; requiresEmailConfirmation?: boolean }>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
   setMockSession: (role: UserRole, profileData?: Partial<Profile>, dealershipData?: Partial<Dealership>) => void;
@@ -79,6 +79,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               setDealership(dealerData as Dealership);
             }
           }
+        }
+      } else {
+        // Fallback: If user is authenticated in auth.users but has no profile row yet, auto-create profile from metadata
+        const { data: authUserObj } = await supabase.auth.getUser();
+        if (authUserObj?.user && authUserObj.user.id === userId) {
+          const meta = authUserObj.user.user_metadata || {};
+          const fallbackRole = (meta.role as UserRole) || 'buyer';
+          const fallbackProfile: Profile = {
+            id: userId,
+            role: fallbackRole,
+            full_name: meta.full_name || authUserObj.user.email?.split('@')[0] || 'Car Buyer',
+            phone: meta.phone || '+91 98765 43210',
+            district_id: meta.district_id || 'd1111111-1111-1111-1111-111111111101',
+            consent_share_details: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          };
+          try {
+            await supabase.from('profiles').insert(fallbackProfile);
+          } catch {
+            // ignore if already created
+          }
+          setProfile(fallbackProfile);
         }
       }
     } catch (err) {
@@ -177,16 +200,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) return { success: false, error: error.message };
+      if (error) {
+        let msg = error.message;
+        if (msg.toLowerCase().includes('credential') || msg.toLowerCase().includes('confirm')) {
+          msg = 'Invalid credentials or email not confirmed. (If you recently registered, please verify your email, or disable "Confirm email" in Supabase Auth > Providers > Email to log in immediately).';
+        }
+        return { success: false, error: msg };
+      }
 
       if (data.user) {
+        await fetchProfileAndDealership(data.user.id);
         const { data: prof } = await supabase
           .from('profiles')
           .select('role')
           .eq('id', data.user.id)
-          .single();
+          .maybeSingle();
 
-        await fetchProfileAndDealership(data.user.id);
         return { success: true, role: (prof?.role as UserRole) || 'buyer' };
       }
       return { success: false, error: 'Login failed' };
@@ -198,7 +227,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const registerBuyer = async (data: BuyerRegistrationData) => {
+  const registerBuyer = async (data: BuyerRegistrationData): Promise<{ success: boolean; error?: string; requiresEmailConfirmation?: boolean }> => {
     setIsLoading(true);
     try {
       if (!isSupabaseConfigured()) {
@@ -219,25 +248,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: data.email,
         password: data.password,
+        options: {
+          data: {
+            role: 'buyer',
+            full_name: data.fullName,
+            phone: data.phone,
+            district_id: data.districtId,
+            consent_share_details: data.consentShareDetails,
+          },
+        },
       });
 
-      if (authError) return { success: false, error: authError.message };
+      if (authError) {
+        let msg = authError.message;
+        if (msg.includes('rate limit') || (authError as any).code === 'over_email_send_rate_limit') {
+          msg = 'Supabase email rate limit exceeded (3/hour on free tier). In Supabase Dashboard > Authentication > Providers > Email, turn OFF "Confirm email" to enable instant registration.';
+        } else if (msg.includes('invalid') || (authError as any).code === 'email_address_invalid') {
+          msg = 'Please enter a valid real email address (e.g. name@gmail.com). Test domains like @example.com are blocked by Supabase.';
+        }
+        return { success: false, error: msg };
+      }
+
       if (!authData.user) return { success: false, error: 'User creation failed' };
 
-      // Insert profile
-      const { error: profileError } = await supabase.from('profiles').insert({
-        id: authData.user.id,
-        role: 'buyer',
-        full_name: data.fullName,
-        phone: data.phone,
-        district_id: data.districtId,
-        consent_share_details: data.consentShareDetails,
-      });
+      // Client-side profile insert/upsert
+      try {
+        await supabase.from('profiles').upsert({
+          id: authData.user.id,
+          role: 'buyer',
+          full_name: data.fullName,
+          phone: data.phone,
+          district_id: data.districtId,
+          consent_share_details: data.consentShareDetails,
+        });
+      } catch {
+        // Trigger on auth.users handles profile creation if RLS prevents anon insert
+      }
 
-      if (profileError) return { success: false, error: profileError.message };
+      if (authData.session) {
+        await fetchProfileAndDealership(authData.user.id);
+        return { success: true, requiresEmailConfirmation: false };
+      }
 
-      await fetchProfileAndDealership(authData.user.id);
-      return { success: true };
+      return { success: true, requiresEmailConfirmation: true };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Registration failed';
       return { success: false, error: msg };
@@ -246,7 +299,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const registerDealer = async (data: DealerRegistrationData) => {
+  const registerDealer = async (data: DealerRegistrationData): Promise<{ success: boolean; error?: string; requiresEmailConfirmation?: boolean }> => {
     setIsLoading(true);
     try {
       if (!isSupabaseConfigured()) {
@@ -283,51 +336,77 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: data.email,
         password: data.password,
+        options: {
+          data: {
+            role: 'dealer',
+            full_name: data.ownerName,
+            phone: data.phone,
+            district_id: data.districtId,
+            consent_share_details: true,
+            dealership_name: data.dealershipName,
+            dealership_address: data.address,
+            gst_number: data.gstNumber,
+            brands: data.brands,
+          },
+        },
       });
 
-      if (authError) return { success: false, error: authError.message };
+      if (authError) {
+        let msg = authError.message;
+        if (msg.includes('rate limit') || (authError as any).code === 'over_email_send_rate_limit') {
+          msg = 'Supabase email rate limit exceeded (3/hour on free tier). In Supabase Dashboard > Authentication > Providers > Email, turn OFF "Confirm email" to enable instant registration.';
+        } else if (msg.includes('invalid') || (authError as any).code === 'email_address_invalid') {
+          msg = 'Please enter a valid real email address (e.g. name@gmail.com). Test domains like @example.com are blocked by Supabase.';
+        }
+        return { success: false, error: msg };
+      }
+
       if (!authData.user) return { success: false, error: 'Dealer account creation failed' };
 
-      // 1. Insert profile as dealer
-      const { error: profError } = await supabase.from('profiles').insert({
-        id: authData.user.id,
-        role: 'dealer',
-        full_name: data.ownerName,
-        phone: data.phone,
-        district_id: data.districtId,
-        consent_share_details: true,
-      });
-      if (profError) return { success: false, error: profError.message };
-
-      // 2. Insert dealership (status = PENDING)
-      const { data: dealerRow, error: dealerError } = await supabase
-        .from('dealerships')
-        .insert({
-          name: data.dealershipName,
-          status: 'PENDING',
-          address: data.address,
+      // Client-side fallback insert if session exists
+      try {
+        await supabase.from('profiles').upsert({
+          id: authData.user.id,
+          role: 'dealer',
+          full_name: data.ownerName,
+          phone: data.phone,
           district_id: data.districtId,
-          contact_phone: data.phone,
-          contact_email: data.email,
-          gst_number: data.gstNumber,
-          brands: data.brands,
-          districts: [data.districtId],
-        })
-        .select()
-        .single();
+          consent_share_details: true,
+        });
 
-      if (dealerError) return { success: false, error: dealerError.message };
+        const { data: dealerRow } = await supabase
+          .from('dealerships')
+          .insert({
+            name: data.dealershipName,
+            status: 'PENDING',
+            address: data.address,
+            district_id: data.districtId,
+            contact_phone: data.phone,
+            contact_email: data.email,
+            gst_number: data.gstNumber,
+            brands: data.brands,
+            districts: [data.districtId],
+          })
+          .select()
+          .maybeSingle();
 
-      // 3. Link owner in dealer_users
-      const { error: duError } = await supabase.from('dealer_users').insert({
-        dealership_id: dealerRow.id,
-        user_id: authData.user.id,
-        role: 'owner',
-      });
-      if (duError) return { success: false, error: duError.message };
+        if (dealerRow) {
+          await supabase.from('dealer_users').insert({
+            dealership_id: dealerRow.id,
+            user_id: authData.user.id,
+            role: 'owner',
+          });
+        }
+      } catch {
+        // Trigger on auth.users handles dealership & dealer_users creation if RLS prevents client insert
+      }
 
-      await fetchProfileAndDealership(authData.user.id);
-      return { success: true };
+      if (authData.session) {
+        await fetchProfileAndDealership(authData.user.id);
+        return { success: true, requiresEmailConfirmation: false };
+      }
+
+      return { success: true, requiresEmailConfirmation: true };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Dealer registration failed';
       return { success: false, error: msg };

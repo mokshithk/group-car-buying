@@ -213,4 +213,25 @@ test.describe('Group Car Buying Platform E2E Suite', () => {
     await page.goto('/dealer/bookings');
     await expect(page.locator('text=Customer Bookings Received')).toBeVisible();
   });
+
+  test('10. Buyer registration UI and validation flow', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/register/buyer');
+
+    await expect(page.getByRole('heading', { name: 'Create Buyer Account' })).toBeVisible();
+    await expect(page.locator('text=Buyer Registration')).toBeVisible();
+
+    // Fill registration fields
+    await page.fill('input[placeholder="Rahul Sharma"]', 'Test Buyer');
+    await page.fill('input[type="email"]', 'testbuyer99@gmail.com');
+    await page.fill('input[placeholder="9876543210"]', '9876543210');
+    await page.fill('input[type="password"]', 'Password123!');
+
+    // Check consent checkbox
+    await page.check('input[type="checkbox"]');
+
+    // Submit button should be visible and enabled
+    const submitBtn = page.locator('button:has-text("Create Buyer Account")');
+    await expect(submitBtn).toBeEnabled();
+  });
 });

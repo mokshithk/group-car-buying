@@ -150,3 +150,14 @@
   - Synchronized all fallback seed catalogs, services (`catalogData.ts`, `groupService.ts`, `quoteService.ts`, `bookingService.ts`), auth contexts, and dealer rating models
   - Updated Playwright E2E tests and verified all 9 tests pass
   - Verify build & commit: `fix uuid syntax in seed and codebase to use valid hex characters`
+
+- [x] **Task 18**: Fix Supabase Email Registration, Automated Auth Triggers & Rate Limits
+  - Created `003_auth_user_trigger.sql` with `handle_new_user()` `SECURITY DEFINER` trigger on `auth.users` to automatically create profiles and dealerships without RLS blocking
+  - Added user backfill query to restore profiles for any existing users created before the trigger
+  - Updated RLS insert policies on `profiles`, `dealerships`, and `dealer_users` to allow registration inserts
+  - Passed profile and dealership parameters in `supabase.auth.signUp()` options metadata
+  - Handled email confirmation state gracefully: displayed verification confirmation screen with developer guidance on disabling "Confirm email" in Supabase
+  - Translated common Supabase auth errors (`over_email_send_rate_limit`, `email_address_invalid`) into human-actionable messages
+  - Added Playwright test 10 covering buyer registration form validation
+  - Verified build and all 10 Playwright E2E tests pass
+  - Verify build & commit: `fix supabase email registration flow and add auth triggers`

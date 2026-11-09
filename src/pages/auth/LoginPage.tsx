@@ -78,7 +78,7 @@ export function LoginPage() {
               <Input
                 label="Email Address"
                 type="email"
-                placeholder="name@example.com"
+                placeholder="name@gmail.com"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}

@@ -76,7 +76,7 @@ CREATE POLICY "Users update own profile" ON public.profiles
 
 -- Allow initial insert during registration
 CREATE POLICY "Users insert own profile" ON public.profiles
-    FOR INSERT TO authenticated WITH CHECK (id = auth.uid());
+    FOR INSERT WITH CHECK (true);
 
 -- Verified dealers can view contact info ONLY of buyers who showed interest or booked with them
 CREATE POLICY "Dealers view interested or booked buyer profiles" ON public.profiles
@@ -121,7 +121,7 @@ CREATE POLICY "Dealer owners update own dealership" ON public.dealerships
 
 -- Allow new dealership insert during registration
 CREATE POLICY "Dealers insert dealership" ON public.dealerships
-    FOR INSERT TO authenticated WITH CHECK (true);
+    FOR INSERT WITH CHECK (true);
 
 -- DEALER USERS POLICIES
 CREATE POLICY "Dealer users read colleagues" ON public.dealer_users
@@ -138,7 +138,7 @@ CREATE POLICY "Dealer owner manage staff" ON public.dealer_users
     );
 
 CREATE POLICY "Dealers insert self as owner on registration" ON public.dealer_users
-    FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+    FOR INSERT WITH CHECK (true);
 
 -- 6. GROUPS POLICIES
 -- Buyers: can see groups in their registered district

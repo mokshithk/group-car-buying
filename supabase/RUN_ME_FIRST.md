@@ -22,16 +22,35 @@ Run each of these scripts in the exact sequence below:
    - File: `supabase/seed.sql`
    - Seeds 15 Indian districts, 10 manufacturers, 12 car models with 3 variants each.
    - Seeds 4 fake test dealerships (3 `VERIFIED`, 1 `PENDING`).
-   - Seeds groups illustrating the visibility rule:
-     - Group 1: 3 members (visible immediately)
-     - Group 2: 2 members, > 20 days old (visible by 20-day rule)
-     - Group 3: 2 members, < 20 days old (forming/waiting countdown)
-     - Group 4: 1 member (never visible)
-   - Seeds quotations (including competitive quotes, 1 expired quote, and 1 incomplete quote).
+   - Seeds groups illustrating the visibility rule.
+   - Re-runnable: all inserts use `ON CONFLICT DO NOTHING;`.
+
+4. **Step 4: Automated Auth Trigger & Registration RLS**
+   - File: `supabase/migrations/003_auth_user_trigger.sql`
+   - Creates `handle_new_user()` trigger on `auth.users` to automatically create buyer profiles and dealer records.
+   - Backfills existing users who signed up before the trigger was created.
 
 ---
 
-## 2. Setting Up Environment Variables
+## 2. Supabase Email Confirmation Setting (Crucial for Testing)
+
+By default, new Supabase projects enforce email confirmation and restrict outgoing emails to **3 per hour** on the free tier. This causes:
+- `429: email rate limit exceeded` after 3 signup attempts.
+- Rejection of test emails (`@example.com` is blocked).
+- Inability to log in immediately without opening an external email link.
+
+**To enable instant, frictionless registration & login:**
+1. Go to **Authentication** > **Providers** in your Supabase Dashboard:
+   `https://supabase.com/dashboard/project/<your-project-id>/auth/providers`
+2. Click the **Email** provider.
+3. Turn **OFF** the toggle for **"Confirm email"**.
+4. Click **Save**.
+
+*(Once turned off, every signup is automatically activated and immediately logged in, with no rate limits or email hurdles).*
+
+---
+
+## 3. Setting Up Environment Variables
 
 1. Copy `.env.example` to `.env.local` in `D:\group-car-buying`:
    ```bash
@@ -46,7 +65,7 @@ Run each of these scripts in the exact sequence below:
 
 ---
 
-## 3. Creating Your First Buyer and Dealer Users
+## 4. Creating Your First Buyer and Dealer Users
 
 1. Start the app: `npm run dev`.
 2. **Register a Buyer**:
@@ -61,7 +80,7 @@ Run each of these scripts in the exact sequence below:
 
 ---
 
-## 4. Dealer Approval SQL Snippet
+## 5. Dealer Approval SQL Snippet
 
 Run this SQL in your Supabase SQL Editor to approve the dealership and give it access to eligible groups:
 
@@ -84,7 +103,7 @@ SELECT id, name, status, contact_email FROM public.dealerships;
 
 ---
 
-## 5. SQL Verification Checks (RLS Isolation)
+## 6. SQL Verification Checks (RLS Isolation)
 
 Run these queries to prove data isolation between buyers and dealers:
 

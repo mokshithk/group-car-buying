@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { Button, Input, Select, Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui';
-import { Car, Lock, Mail, User, Phone, MapPin, ArrowRight } from 'lucide-react';
+import { Car, Lock, Mail, User, Phone, MapPin, ArrowRight, CheckCircle2 } from 'lucide-react';
 
 const SEED_DISTRICTS = [
   { value: 'd1111111-1111-1111-1111-111111111101', label: 'Bengaluru Urban (Karnataka)' },
@@ -26,6 +26,7 @@ export function BuyerRegisterPage() {
   const [consentShareDetails, setConsentShareDetails] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isSuccessUnconfirmed, setIsSuccessUnconfirmed] = useState(false);
 
   const { registerBuyer } = useAuth();
   const navigate = useNavigate();
@@ -53,7 +54,11 @@ export function BuyerRegisterPage() {
     setIsLoading(false);
 
     if (res.success) {
-      navigate(redirectUrl || '/buyer/dashboard', { replace: true });
+      if (res.requiresEmailConfirmation) {
+        setIsSuccessUnconfirmed(true);
+      } else {
+        navigate(redirectUrl || '/buyer/dashboard', { replace: true });
+      }
     } else {
       setError(res.error || 'Registration failed');
     }
@@ -78,7 +83,31 @@ export function BuyerRegisterPage() {
           </p>
         </div>
 
-        <Card className="shadow-elevated border-slate-200/80">
+        {isSuccessUnconfirmed ? (
+          <Card className="shadow-elevated border-slate-200/80 p-8 text-center">
+            <div className="w-14 h-14 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600 mx-auto mb-4 border border-emerald-100 shadow-sm">
+              <CheckCircle2 className="w-7 h-7" />
+            </div>
+            <h3 className="text-xl font-bold text-slate-900">Registration Successful!</h3>
+            <p className="text-sm text-slate-600 mt-2 leading-relaxed">
+              We have sent an activation email to <strong>{email}</strong>. Please check your inbox and click the confirmation link to activate your account.
+            </p>
+            <div className="mt-6 pt-6 border-t border-slate-100 space-y-3">
+              <Link to="/login">
+                <Button variant="primary" className="w-full">
+                  Go to Login
+                </Button>
+              </Link>
+              <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-left text-xs text-amber-900 space-y-1">
+                <p className="font-semibold text-amber-950">Tip for testing / development:</p>
+                <p>
+                  In your Supabase project, go to <strong>Authentication &gt; Providers &gt; Email</strong> and turn OFF <strong>"Confirm email"</strong>. This skips verification emails and logs users in immediately without rate limits.
+                </p>
+              </div>
+            </div>
+          </Card>
+        ) : (
+          <Card className="shadow-elevated border-slate-200/80">
           <CardHeader className="pb-2">
             <CardTitle className="text-base text-slate-900">Buyer Registration</CardTitle>
             <CardDescription>
@@ -106,7 +135,7 @@ export function BuyerRegisterPage() {
                 <Input
                   label="Email Address"
                   type="email"
-                  placeholder="rahul@example.com"
+                  placeholder="rahul@gmail.com"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
@@ -191,6 +220,7 @@ export function BuyerRegisterPage() {
             </div>
           </CardContent>
         </Card>
+        )}
       </div>
     </div>
   );

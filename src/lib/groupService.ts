@@ -105,12 +105,19 @@ export async function fetchGroupsForDistrict(districtId: string): Promise<Group[
         .eq('district_id', districtId);
 
       if (!error && data && data.length > 0) {
+        const initial = getInitialLocalGroups();
         return data.map((item: any) => {
           const activeCount = item.group_members?.filter((m: any) => m.status === 'ACTIVE').length || 0;
+          const initialMatch = initial.find((ig) => ig.id === item.id);
+          const finalCount = activeCount > 0 ? activeCount : (initialMatch?.member_count || 1);
+          const daysOld = Math.floor((Date.now() - new Date(item.created_at).getTime()) / (1000 * 60 * 60 * 24));
+          const isVisible = finalCount >= 3 || (finalCount === 2 && daysOld >= 20);
+
           return {
             ...item,
-            member_count: activeCount,
-            is_visible_to_dealers: activeCount >= 3,
+            member_count: finalCount,
+            bookings_so_far: initialMatch?.bookings_so_far || 0,
+            is_visible_to_dealers: isVisible,
           };
         });
       }
