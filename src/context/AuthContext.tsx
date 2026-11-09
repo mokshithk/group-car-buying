@@ -30,7 +30,13 @@ interface AuthContextType {
   dealership: Dealership | null;
   role: UserRole | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string; role?: UserRole; isUnconfirmedEmail?: boolean }>;
+  login: (email: string, password: string) => Promise<{
+    success: boolean;
+    error?: string;
+    role?: UserRole;
+    dealershipStatus?: 'PENDING' | 'VERIFIED' | 'SUSPENDED';
+    isUnconfirmedEmail?: boolean;
+  }>;
   registerBuyer: (data: BuyerRegistrationData) => Promise<{ success: boolean; error?: string; requiresEmailConfirmation?: boolean }>;
   registerDealer: (data: DealerRegistrationData) => Promise<{ success: boolean; error?: string; requiresEmailConfirmation?: boolean }>;
   logout: () => Promise<void>;
@@ -161,7 +167,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .maybeSingle();
 
         const role = (prof?.role as UserRole) || 'buyer';
-        return { success: true, role };
+        let dealershipStatus: 'PENDING' | 'VERIFIED' | 'SUSPENDED' | undefined;
+
+        if (role === 'dealer') {
+          const { data: du } = await supabase
+            .from('dealer_users')
+            .select('dealership_id')
+            .eq('user_id', data.user.id)
+            .maybeSingle();
+
+          if (du) {
+            const { data: dRow } = await supabase
+              .from('dealerships')
+              .select('status')
+              .eq('id', du.dealership_id)
+              .maybeSingle();
+            dealershipStatus = dRow?.status as any;
+          }
+        }
+
+        return { success: true, role, dealershipStatus };
       }
       return { success: false, error: 'Login failed. Please check credentials.' };
     } catch (err: unknown) {

@@ -59,6 +59,7 @@ export default function App() {
                 <Route path="/register/dealer" element={<DealerRegisterPage />} />
                 <Route path="/forgot-password" element={<ForgotPasswordPage />} />
                 <Route path="/dealer/pending-approval" element={<PendingApprovalPage />} />
+                <Route path="/dealer/pending" element={<PendingApprovalPage />} />
 
                 {/* Buyer Protected Pages */}
                 <Route

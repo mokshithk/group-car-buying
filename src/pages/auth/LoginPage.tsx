@@ -23,19 +23,23 @@ export function LoginPage() {
     setIsLoading(false);
 
     if (res.success) {
-      if (redirectUrl) {
-        // Enforce role compatibility on redirect
-        if (res.role === 'buyer' && redirectUrl.startsWith('/dealer')) {
-          navigate('/buyer/dashboard', { replace: true });
-        } else if (res.role === 'dealer' && redirectUrl.startsWith('/buyer')) {
-          navigate('/dealer/dashboard', { replace: true });
-        } else {
+      if (res.role === 'dealer') {
+        const isPending = res.dealershipStatus === 'PENDING';
+        if (isPending) {
+          navigate('/dealer/pending-approval', { replace: true });
+        } else if (redirectUrl && redirectUrl.startsWith('/dealer') && !redirectUrl.includes('pending')) {
           navigate(redirectUrl, { replace: true });
+        } else {
+          navigate('/dealer/dashboard', { replace: true });
         }
-      } else if (res.role === 'dealer') {
-        navigate('/dealer/dashboard', { replace: true });
+      } else if (res.role === 'buyer') {
+        if (redirectUrl && redirectUrl.startsWith('/buyer')) {
+          navigate(redirectUrl, { replace: true });
+        } else {
+          navigate('/buyer/dashboard', { replace: true });
+        }
       } else {
-        navigate('/buyer/dashboard', { replace: true });
+        navigate('/', { replace: true });
       }
     } else {
       if (res.isUnconfirmedEmail) {
