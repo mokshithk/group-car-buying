@@ -45,6 +45,22 @@ export function OtpVerification({
     return () => clearInterval(interval);
   }, [resendCooldown]);
 
+  // 3. Auto-detect email link confirmation (if user clicks the link in their email)
+  useEffect(() => {
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (
+        event === 'SIGNED_IN' ||
+        event === 'USER_UPDATED' ||
+        (session?.user && (session.user as any).email_confirmed_at)
+      ) {
+        await onSuccess();
+      }
+    });
+    return () => subscription.unsubscribe();
+  }, [onSuccess]);
+
   // Handle individual digit change
   const handleChange = (index: number, value: string) => {
     // Only accept numeric digit
@@ -197,7 +213,7 @@ export function OtpVerification({
         <CardDescription className="text-xs text-slate-600 max-w-sm mx-auto leading-relaxed mt-1">
           {description || (
             <>
-              We sent a 6-digit code to <strong className="text-slate-900">{email}</strong>
+              We sent a verification email to <strong className="text-slate-900">{email}</strong>. Enter the 6-digit code or click the confirmation link in your email.
               {onChangeEmail && (
                 <button
                   type="button"
