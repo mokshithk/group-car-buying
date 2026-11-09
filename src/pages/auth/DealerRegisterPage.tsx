@@ -215,10 +215,13 @@ export function DealerRegisterPage() {
                 label="Operating District"
                 value={districtId}
                 onChange={(e) => setDistrictId(e.target.value)}
-                options={districts.map((d) => ({
-                  value: d.id,
-                  label: `${d.name} (${d.state})`,
-                }))}
+                options={[
+                  { value: '', label: 'Select operating district...' },
+                  ...districts.map((d) => ({
+                    value: d.id,
+                    label: `${d.name} (${d.state})`,
+                  })),
+                ]}
                 required
               />
 

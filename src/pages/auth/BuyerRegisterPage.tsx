@@ -166,10 +166,13 @@ export function BuyerRegisterPage() {
                   label="Your District (Crucial for Group Matching)"
                   value={districtId}
                   onChange={(e) => setDistrictId(e.target.value)}
-                  options={districts.map((d) => ({
-                    value: d.id,
-                    label: `${d.name} (${d.state})`,
-                  }))}
+                  options={[
+                    { value: '', label: 'Select your district...' },
+                    ...districts.map((d) => ({
+                      value: d.id,
+                      label: `${d.name} (${d.state})`,
+                    })),
+                  ]}
                   required
                 />
                 <p className="text-[11px] text-slate-500 flex items-center gap-1">

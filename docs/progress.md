@@ -161,3 +161,13 @@
   - Added Playwright test 10 covering buyer registration form validation
   - Verified build and all 10 Playwright E2E tests pass
   - Verify build & commit: `fix supabase email registration flow and add auth triggers`
+
+- [x] **Task 19**: Complete Auth and Data Layer on Real Supabase Backend
+  - Removed demo mode, instant test session shortcuts, and hardcoded in-memory seed arrays from frontend
+  - Separated clean catalog (`seed.sql`) from optional demo data (`seed_demo.sql`) using RFC-compliant hex UUIDs
+  - Added database trigger migration `004_reliable_profile_trigger.sql` enforcing strict roles (`'buyer'` / `'dealer'`), owner linkage, and RLS policies
+  - Built `/register` role chooser ("I'm a Buyer" vs "I'm a Dealership") and 6-digit OTP verification on registration
+  - Built `/forgot-password` recovery flow with 6-digit OTP verification and secure password update
+  - Protected routes against missing profiles and unrecognized roles with clear error screen and sign-out action
+  - Created `docs/auth-setup.md` with complete email templates (`{{ .Token }}`), SMTP guidance, and OTP settings
+  - Updated Playwright E2E test suite covering role chooser, registration OTP, password recovery OTP, error states, and route guards

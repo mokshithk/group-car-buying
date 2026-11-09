@@ -4,9 +4,9 @@ Follow these steps in your Supabase project's **SQL Editor** (`https://supabase.
 
 ---
 
-## 1. Execution Order
+## 1. Migration Execution Order
 
-Run each of these scripts in the exact sequence below:
+Run each of these scripts in your Supabase SQL Editor in the exact sequence below:
 
 1. **Step 1: Core Schema, Constraints & Functions**
    - File: `supabase/migrations/001_initial_schema.sql`
@@ -15,38 +15,43 @@ Run each of these scripts in the exact sequence below:
 
 2. **Step 2: Row Level Security (RLS) Policies**
    - File: `supabase/migrations/002_rls_policies.sql`
-   - Enables RLS on all 22 tables.
-   - Enforces isolation: buyers only see groups in their district; dealers cannot see buyer phone/email before an interest/booking; dealers only see their own leads and bookings; dealer quotation controls.
+   - Enables RLS on all tables.
+   - Enforces isolation: buyers only see groups in their district; dealers cannot see buyer phone/email before an interest/booking; dealers only see their own leads and bookings; quotation controls.
 
-3. **Step 3: Seed Data**
-   - File: `supabase/seed.sql`
-   - Seeds 15 Indian districts, 10 manufacturers, 12 car models with 3 variants each.
-   - Seeds 4 fake test dealerships (3 `VERIFIED`, 1 `PENDING`).
-   - Seeds groups illustrating the visibility rule.
-   - Re-runnable: all inserts use `ON CONFLICT DO NOTHING;`.
-
-4. **Step 4: Automated Auth Trigger & Registration RLS**
+3. **Step 3: Base Trigger Schema**
    - File: `supabase/migrations/003_auth_user_trigger.sql`
-   - Creates `handle_new_user()` trigger on `auth.users` to automatically create buyer profiles and dealer records.
-   - Backfills existing users who signed up before the trigger was created.
+   - Baseline trigger definitions on `auth.users`.
+
+4. **Step 4: Reliable Profile & Dealership Trigger (Hardened)**
+   - File: `supabase/migrations/004_reliable_profile_trigger.sql`
+   - Sets up hardened `handle_new_user()` trigger running with `SECURITY DEFINER`.
+   - Strictly enforces role safety (only `'buyer'` or `'dealer'`, never `'admin'`).
+   - Automatically provisions a pending showroom in `dealerships` linked to `dealer_users` for dealer accounts.
+   - Includes backfill for any existing accounts created before trigger setup.
+   - Adds explicit own-profile read/update RLS policies.
+
+5. **Step 5: Catalog Seed Data**
+   - File: `supabase/seed.sql`
+   - Seeds the real catalog: 15 Indian districts, 10 manufacturers, 12 car models, and 36 variants.
+   - Pure catalog only — zero fake mock groups or fake dealerships.
+   - Re-runnable: all inserts use `ON CONFLICT DO NOTHING;` and valid hex UUIDs.
+
+6. **Step 6 (Optional): Test & Demonstration Data**
+   - File: `supabase/seed_demo.sql`
+   - Seeds sample test dealerships (3 `VERIFIED`, 1 `PENDING`), test groups (illustrating visibility thresholds), and initial quotations for demonstration.
+   - Re-runnable with valid hex UUIDs.
 
 ---
 
-## 2. Supabase Email Confirmation Setting (Crucial for Testing)
+## 2. Authentication & 6-Digit Email OTP Setup
 
-By default, new Supabase projects enforce email confirmation and restrict outgoing emails to **3 per hour** on the free tier. This causes:
-- `429: email rate limit exceeded` after 3 signup attempts.
-- Rejection of test emails (`@example.com` is blocked).
-- Inability to log in immediately without opening an external email link.
+For full instructions on configuring the 6-digit email OTP templates, token variables (`{{ .Token }}`), 10-minute expiry, and custom SMTP recommendations, please refer to:
+👉 **[docs/auth-setup.md](../docs/auth-setup.md)**
 
-**To enable instant, frictionless registration & login:**
-1. Go to **Authentication** > **Providers** in your Supabase Dashboard:
-   `https://supabase.com/dashboard/project/<your-project-id>/auth/providers`
-2. Click the **Email** provider.
-3. Turn **OFF** the toggle for **"Confirm email"**.
-4. Click **Save**.
-
-*(Once turned off, every signup is automatically activated and immediately logged in, with no rate limits or email hurdles).*
+### Quick Summary:
+- **Authentication > Providers > Email**: Enable Email Provider = `ON`, Confirm email = `ON` (or `OFF` for instant local testing).
+- **Authentication > Email Templates**: Replace default links with `{{ .Token }}` in "Confirm signup" and "Reset password".
+- **Authentication > Rate Limits**: Set OTP length to 6 digits, expiration to 600 seconds.
 
 ---
 
@@ -61,62 +66,39 @@ By default, new Supabase projects enforce email confirmation and restrict outgoi
    VITE_SUPABASE_URL=https://your-project-ref.supabase.co
    VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5c...
    ```
-   *(Never commit `.env.local`. It is already in `.gitignore`.)*
+   *(Never commit `.env.local`. It is already excluded in `.gitignore`.)*
 
 ---
 
-## 4. Creating Your First Buyer and Dealer Users
+## 4. Manual Dealer Approval Snippet
 
-1. Start the app: `npm run dev`.
-2. **Register a Buyer**:
-   - Go to `http://localhost:3000/register/buyer`
-   - Fill in: Full Name (e.g., `Rahul Sharma`), Email, Phone (`9876543210`), District (e.g., `Bengaluru Urban`), Password, and check the consent box.
-   - Click **Create Buyer Account**. You are registered with role `buyer`.
-3. **Register a Dealership**:
-   - Log out, then go to `http://localhost:3000/register/dealer`
-   - Fill in: Dealership Name (e.g., `Premier Auto Hub`), Email (`dealer@example.com`), Phone, District (`Bengaluru Urban`), Brands (`Tata Motors`), GST Number, and password.
-   - Click **Submit Dealership Application**.
-   - Upon registration, your dealership status will be **PENDING**. You will see the friendly *Pending Approval* screen.
-
----
-
-## 5. Dealer Approval SQL Snippet
-
-Run this SQL in your Supabase SQL Editor to approve the dealership and give it access to eligible groups:
+When a dealership registers via `/register/dealer`, its initial status is `PENDING`. Run this SQL query in Supabase to approve the showroom:
 
 ```sql
--- Approve dealership by dealer contact email:
 UPDATE public.dealerships
 SET status = 'VERIFIED',
-    updated_at = now()
-WHERE contact_email = 'dealer@example.com';
+    verified_at = NOW()
+WHERE showroom_name = 'Your Dealership Name'
+   OR owner_email = 'dealer@example.com';
+```
 
--- OR approve dealership by dealership name:
--- UPDATE public.dealerships
--- SET status = 'VERIFIED',
---     updated_at = now()
--- WHERE name ILIKE '%Premier Auto Hub%';
-
--- Verify status is now VERIFIED:
-SELECT id, name, status, contact_email FROM public.dealerships;
+Verify the approval status:
+```sql
+SELECT id, showroom_name, status, owner_email, verified_at 
+FROM public.dealerships;
 ```
 
 ---
 
-## 6. SQL Verification Checks (RLS Isolation)
+## 5. SQL Verification Checks (RLS Isolation)
 
-Run these queries to prove data isolation between buyers and dealers:
+Run these queries to verify data isolation:
 
 ```sql
--- 1. Verify that non-interested dealers cannot view buyer phone or email
--- As an anonymous or un-interested dealer user, querying profiles will return empty or only own profile:
+-- 1. Profiles query (should only return own user profile under RLS):
 SELECT id, full_name, phone, role FROM public.profiles;
 
--- 2. Verify group visibility rule:
--- Group 1 (3 members): true
--- Group 2 (2 members, 25 days old): true
--- Group 3 (2 members, 2 days old): false
--- Group 4 (1 member): false
+-- 2. Group visibility rule verification:
 SELECT 
     id, 
     variant_name, 
@@ -124,10 +106,4 @@ SELECT
     bookings_so_far, 
     is_visible 
 FROM public.dealer_eligible_groups_view;
-
--- 3. Verify dealer quotation isolation:
--- Check that dealers only see quotes on eligible groups and cannot update other dealers' quotes:
-SELECT q.id, d.name AS dealer_name, q.on_road_price, q.is_complete
-FROM public.quotations q
-JOIN public.dealerships d ON q.dealership_id = d.id;
 ```

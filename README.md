@@ -59,19 +59,25 @@ VITE_SUPABASE_URL=https://your-supabase-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
 ```
 
-### 4. Supabase Migrations
-Run the migrations in your Supabase SQL Editor in the following order:
-1. `supabase/migrations/001_initial_schema.sql` - Core tables, settings, visibility functions, and price versioning triggers.
+### 4. Supabase Migrations & Database Setup
+Run the SQL scripts in your Supabase SQL Editor in this exact order:
+1. `supabase/migrations/001_initial_schema.sql` - Core schema, tables, constraints, visibility functions, and triggers.
 2. `supabase/migrations/002_rls_policies.sql` - Row-level security policies enforcing buyer privacy and dealership isolation.
-3. `supabase/seed.sql` - Optional seed data with catalog vehicles, sample groups, and dealerships.
+3. `supabase/migrations/003_auth_user_trigger.sql` - Base authentication trigger setup.
+4. `supabase/migrations/004_reliable_profile_trigger.sql` - Hardened `handle_new_user()` `SECURITY DEFINER` trigger, strict role enforcement (`'buyer'` / `'dealer'`), pending dealership provisioning, and RLS policies.
+5. `supabase/seed.sql` - Real catalog data (15 districts, 10 manufacturers, 12 models, 36 variants). Pure catalog with zero fake data.
+6. `supabase/seed_demo.sql` - (Optional) Sample demonstration data (test dealerships, demo buying groups, initial quotes).
+
+For detailed 6-digit Email OTP configuration and email templates with `{{ .Token }}`, see [docs/auth-setup.md](docs/auth-setup.md).
 
 #### Manual Dealer Approval Snippet
-Until an administrative module is deployed, newly registered dealerships start with `PENDING` verification. Run this SQL query to verify a dealership:
+Newly registered dealerships start with status `PENDING` until reviewed. Run this SQL query in your Supabase SQL Editor to verify a showroom:
 ```sql
 UPDATE public.dealerships
-SET verification_status = 'VERIFIED',
-    updated_at = NOW()
-WHERE id = '<DEALERSHIP_UUID>'; -- or WHERE name = 'Your Showroom Name'
+SET status = 'VERIFIED',
+    verified_at = NOW()
+WHERE showroom_name = '<Showroom Name>'
+   OR owner_email = '<dealer@example.com>';
 ```
 
 ---

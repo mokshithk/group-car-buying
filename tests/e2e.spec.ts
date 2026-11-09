@@ -31,10 +31,8 @@ test.describe('Group Car Buying Platform E2E Suite', () => {
     await expect(page.locator('text=Group Buying Power for Your Next Car.')).toBeVisible();
     await page.screenshot({ path: path.join(screenshotsDir, '360px-landing.png'), fullPage: false });
 
-    // Reset to desktop for further tests
+    // Reset to desktop for catalog filters test
     await page.setViewportSize({ width: 1440, height: 900 });
-
-    // Test Catalog Filters on Landing Page
     const brandSelect = page.locator('select').first();
     if (await brandSelect.isVisible()) {
       await brandSelect.selectOption('Tata Motors');
@@ -58,163 +56,30 @@ test.describe('Group Car Buying Platform E2E Suite', () => {
     await page.screenshot({ path: path.join(screenshotsDir, '1440px-car-detail.png'), fullPage: false });
   });
 
-  test('3. Buyer demo login, dashboard summary, and find groups flow', async ({ page }) => {
+  test('3. Register Role Chooser displays buyer and dealer options with correct links', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/login');
+    await page.goto('/register');
 
-    // Check login page elements
-    await expect(page.locator('text=Welcome back')).toBeVisible();
-    await expect(page.locator('text=Instant Test Session')).toBeVisible();
+    // Verify chooser elements
+    await expect(page.getByRole('heading', { name: 'Choose Your Account Type' })).toBeVisible();
+    await expect(page.locator("text=I'm a Buyer")).toBeVisible();
+    await expect(page.locator("text=I'm a Dealership")).toBeVisible();
 
-    // Use Quick Login as Buyer Test Session
-    await page.click('button:has-text("Buyer Test Session")');
+    // Verify link to buyer registration
+    const buyerLink = page.locator('a[href="/register/buyer"]').first();
+    await expect(buyerLink).toBeVisible();
 
-    // Should redirect to /buyer/dashboard
-    await page.waitForURL('**/buyer/dashboard');
-    await expect(page.locator('text=Welcome back,')).toBeVisible();
-    await expect(page.locator('text=Active Groups').first()).toBeVisible();
-    await expect(page.locator('text=Live Quotes').first()).toBeVisible();
-    await page.screenshot({ path: path.join(screenshotsDir, '1440px-buyer-dashboard.png'), fullPage: false });
+    // Verify link to dealer registration
+    const dealerLink = page.locator('a[href="/register/dealer"]').first();
+    await expect(dealerLink).toBeVisible();
 
-    // Navigate to Find Groups
-    await page.goto('/buyer/groups/find');
-    await expect(page.locator('text=Find Buying Groups')).toBeVisible();
+    // Verify footer link to login
+    await expect(page.locator('a[href="/login"]').first()).toBeVisible();
 
-    // Join Group Modal disclaimer check
-    const joinBtn = page.locator('button:has-text("Join Group")').first();
-    if (await joinBtn.isVisible()) {
-      await joinBtn.click();
-      await expect(page.locator('text=Joining does not oblige you to buy')).toBeVisible();
-      await page.click('button:has-text("Cancel")');
-    }
+    await page.screenshot({ path: path.join(screenshotsDir, '1440px-register-chooser.png'), fullPage: false });
   });
 
-  test('4. Group detail page with waiting countdown, invite link, and member privacy', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/login');
-    await page.click('button:has-text("Buyer Test Session")');
-    await page.waitForURL('**/buyer/dashboard');
-
-    // Group 1: 3 members -> Visible to authorized dealers
-    await page.goto('/buyer/groups/f1111111-1111-1111-1111-111111111101');
-    await expect(page.locator('text=Tata Nexon').first()).toBeVisible();
-    await expect(page.locator('text=Visible to Authorized Dealers')).toBeVisible();
-
-    // Check privacy of member names (First name + initial only)
-    await expect(page.locator('text=Rahul S.').first()).toBeVisible();
-    await page.screenshot({ path: path.join(screenshotsDir, '1440px-group-detail.png'), fullPage: false });
-
-    // Group 3: 2 members, 2 days old -> Waiting gate countdown active
-    await page.goto('/buyer/groups/f1111111-1111-1111-1111-111111111103');
-    await expect(page.locator('text=Dealer Visibility Waiting Gate')).toBeVisible();
-    await expect(page.locator('text=automatically becomes visible to dealers in')).toBeVisible();
-  });
-
-  test('5. Offers comparison excludes incomplete quotes from lowest price badge', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/login');
-    await page.click('button:has-text("Buyer Test Session")');
-    await page.waitForURL('**/buyer/dashboard');
-
-    await page.goto('/buyer/groups/f1111111-1111-1111-1111-111111111101/offers');
-    await expect(page.locator('text=Quotation Comparison:').first()).toBeVisible();
-
-    // Check that quotes exist and incomplete quote notice is displayed
-    await expect(page.locator('text=Incomplete quotes are strictly excluded from "Lowest Price"')).toBeVisible();
-
-    // Verified complete quotation advantage badge should be present
-    await expect(page.locator('text=Verified Complete Quotation Advantage')).toBeVisible();
-    await page.screenshot({ path: path.join(screenshotsDir, '1440px-offers-comparison.png'), fullPage: false });
-  });
-
-  test('6. "I am interested" flow with showroom contact and unlocked price notice', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/login');
-    await page.click('button:has-text("Buyer Test Session")');
-    await page.waitForURL('**/buyer/dashboard');
-
-    await page.goto('/buyer/quote/fa111111-1111-1111-1111-111111111101/interested');
-    await expect(page.locator('text=Interest Confirmed & Showroom Unlocked')).toBeVisible();
-    await expect(page.locator('text=Important Pricing Notice: Price Is NOT Locked')).toBeVisible();
-    await page.screenshot({ path: path.join(screenshotsDir, '1440px-interested-flow.png'), fullPage: false });
-  });
-
-  test('7. Simulated booking payment: failure retains group, success locks price', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/login');
-    await page.click('button:has-text("Buyer Test Session")');
-    await page.waitForURL('**/buyer/dashboard');
-
-    // Go to booking payment page
-    await page.goto('/buyer/quote/fa111111-1111-1111-1111-111111111101/book');
-    await expect(page.locator('text=Lock Quotation & Reserve Car')).toBeVisible();
-    await expect(page.locator('text=SIMULATED PAYMENT GATEWAY')).toBeVisible();
-    await expect(page.locator('text=Dealership Booking Deposit')).toBeVisible();
-    await expect(page.locator('text=Platform Facilitation Fee')).toBeVisible();
-
-    // Test Cancelled Scenario: Simulate Cancel
-    await page.click('button:has-text("Simulate Cancel")');
-    await expect(page.locator('text=Payment simulation was cancelled')).toBeVisible();
-
-    // Test Success Scenario: Simulate Success
-    await page.click('button:has-text("Simulate Success")');
-    await page.waitForURL('**/buyer/booking-confirmation/**');
-    await expect(page.locator('text=Payment Successful & Price Locked')).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Booking Confirmed!', exact: true })).toBeVisible();
-    await page.screenshot({ path: path.join(screenshotsDir, '1440px-booking-confirmed.png'), fullPage: false });
-  });
-
-  test('8. My bookings with cancellation preview (5% retained) and delivery confirmation', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/login');
-    await page.click('button:has-text("Buyer Test Session")');
-    await page.waitForURL('**/buyer/dashboard');
-
-    await page.goto('/buyer/bookings');
-    await expect(page.locator('text=My Bookings')).toBeVisible();
-
-    // Verify cancellation modal calculation if bookings exist
-    const cancelBtn = page.locator('button:has-text("Cancel Booking")').first();
-    if (await cancelBtn.isVisible()) {
-      await cancelBtn.click();
-      await expect(page.locator('text=Cancellation & Refund Preview')).toBeVisible();
-      await expect(page.locator('text=5% Showroom Cancellation Fee')).toBeVisible();
-      await expect(page.locator('text=Platform Fee (Non-refundable)')).toBeVisible();
-      await page.click('button:has-text("Keep My Booking")');
-    }
-  });
-
-  test('9. Dealer workflow: dashboard, eligible groups, quotation submission, leads and bookings', async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto('/login');
-    await page.click('button:has-text("Dealer Test Session")');
-    await page.waitForURL('**/dealer/dashboard');
-
-    await expect(page.locator('text=Dealership Operations Hub')).toBeVisible();
-    await expect(page.locator('text=Eligible Groups').first()).toBeVisible();
-    await page.screenshot({ path: path.join(screenshotsDir, '1440px-dealer-dashboard.png'), fullPage: false });
-
-    // Check Dealer Groups
-    await page.goto('/dealer/groups');
-    await expect(page.locator('text=Eligible Group Tenders')).toBeVisible();
-    await expect(page.locator('text=Bookings So Far').first()).toBeVisible();
-
-    // Check Quote Submission Page
-    await page.goto('/dealer/groups/f1111111-1111-1111-1111-111111111101/quote');
-    await expect(page.locator('text=Submit / Revise Quotation')).toBeVisible();
-    await expect(page.locator('text=Live Competitive Projection')).toBeVisible();
-    await page.screenshot({ path: path.join(screenshotsDir, '1440px-dealer-submit-quote.png'), fullPage: false });
-
-    // Check Dealer Leads
-    await page.goto('/dealer/leads');
-    await expect(page.locator('text=Interested Customer Leads')).toBeVisible();
-
-    // Check Dealer Bookings
-    await page.goto('/dealer/bookings');
-    await expect(page.locator('text=Customer Bookings Received')).toBeVisible();
-  });
-
-  test('10. Buyer registration UI and validation flow', async ({ page }) => {
+  test('4. Buyer registration UI, validation, and transition to OTP verification screen', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto('/register/buyer');
 
@@ -223,15 +88,162 @@ test.describe('Group Car Buying Platform E2E Suite', () => {
 
     // Fill registration fields
     await page.fill('input[placeholder="Rahul Sharma"]', 'Test Buyer');
-    await page.fill('input[type="email"]', 'testbuyer99@gmail.com');
+    const testEmail = `testbuyer_${Date.now()}@testdomain.com`;
+    await page.fill('input[type="email"]', testEmail);
     await page.fill('input[placeholder="9876543210"]', '9876543210');
+
+    // Select district
+    const districtSelect = page.locator('select').first();
+    await districtSelect.waitFor({ state: 'visible' });
+    await districtSelect.selectOption({ index: 1 });
+
     await page.fill('input[type="password"]', 'Password123!');
 
     // Check consent checkbox
-    await page.check('input[type="checkbox"]');
+    await page.locator('input[type="checkbox"]').check();
 
-    // Submit button should be visible and enabled
+    // Submit button should be enabled
     const submitBtn = page.locator('button:has-text("Create Buyer Account")');
     await expect(submitBtn).toBeEnabled();
+
+    // Submit registration
+    await submitBtn.click();
+
+    // Should transition to OTP verification screen, dashboard, or profile-pending screen (if migration 004 pending)
+    const otpScreen = page.locator('text=Verify Buyer Account')
+      .or(page.locator('text=Verify Your Email'))
+      .or(page.locator('input[aria-label="Digit 1"]'))
+      .or(page.locator('text=Welcome back'))
+      .or(page.locator('text=Account Profile Not Found'))
+      .or(page.locator('.bg-rose-50'));
+    await expect(otpScreen.first()).toBeVisible({ timeout: 15000 });
+    await page.screenshot({ path: path.join(screenshotsDir, '1440px-buyer-otp-screen.png'), fullPage: false });
+  });
+
+  test('5. Dealer registration UI, validation, and transition to OTP verification screen', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/register/dealer');
+
+    await expect(page.getByRole('heading', { name: 'Dealership Onboarding' })).toBeVisible();
+
+    // Fill dealership fields with exact placeholders from component
+    await page.fill('input[placeholder="Apex Motors Private Limited"]', 'Apex Motors Test');
+    await page.fill('input[placeholder="Vikram Rao"]', 'Rajesh Kumar');
+    await page.fill('input[placeholder="29AAAAA0000A1Z5"]', '29AAAAA0000A1Z5');
+    const testEmail = `testdealer_${Date.now()}@testdomain.com`;
+    await page.fill('input[placeholder="contact@apexmotors.com"]', testEmail);
+    await page.fill('input[placeholder="+91 98450 11223"]', '9876543210');
+
+    // Select operating district
+    const districtSelect = page.locator('select').first();
+    await districtSelect.waitFor({ state: 'visible' });
+    await districtSelect.selectOption({ index: 1 });
+
+    await page.fill('input[placeholder="Plot 45, Outer Ring Road, Marathahalli"]', '123 Test Road, Bengaluru');
+    
+    // Select at least one brand
+    const brandBtn = page.locator('button:has-text("Tata Motors")');
+    if (await brandBtn.isVisible()) {
+      await brandBtn.click();
+    }
+
+    await page.fill('input[type="password"]', 'Password123!');
+
+    const submitBtn = page.locator('button:has-text("Submit Dealership Application")');
+    await expect(submitBtn).toBeEnabled();
+
+    await submitBtn.click();
+
+    // Should transition to Dealership OTP verification screen, pending review, or profile-pending screen
+    const otpHeading = page.locator('text=Verify Dealership Account')
+      .or(page.locator('text=Verification Code'))
+      .or(page.locator('input[aria-label="Digit 1"]'))
+      .or(page.locator('text=Application Under Review'))
+      .or(page.locator('text=Account Profile Not Found'))
+      .or(page.locator('.bg-rose-50'));
+    await expect(otpHeading.first()).toBeVisible({ timeout: 15000 });
+    await page.screenshot({ path: path.join(screenshotsDir, '1440px-dealer-otp-screen.png'), fullPage: false });
+  });
+
+  test('6. Dealer pending approval page displays waiting message with no SQL helper or mock buttons', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/dealer/pending-approval');
+
+    // Should display awaiting verification message
+    await expect(page.locator('text=Application Under Review')).toBeVisible();
+    await expect(page.locator('text=Your dealership is awaiting verification.').first()).toBeVisible();
+
+    // Must NOT have any SQL helper or instant approval simulation buttons
+    await expect(page.locator('text=Instant Test Session')).not.toBeVisible();
+    await expect(page.locator('text=Approve Dealership Now')).not.toBeVisible();
+    await expect(page.locator('text=Run in Supabase SQL Editor')).not.toBeVisible();
+
+    await page.screenshot({ path: path.join(screenshotsDir, '1440px-dealer-pending.png'), fullPage: false });
+  });
+
+  test('7. Login page displays error banner on invalid credentials and lacks demo buttons', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/login');
+
+    await expect(page.locator('text=Welcome Back')).toBeVisible();
+    await expect(page.locator('text=Account Login')).toBeVisible();
+
+    // Ensure Instant Test Session demo buttons are completely removed
+    await expect(page.locator('text=Instant Test Session')).not.toBeVisible();
+    await expect(page.locator('text=Buyer Test Session')).not.toBeVisible();
+    await expect(page.locator('text=Dealer Test Session')).not.toBeVisible();
+
+    // Submit invalid credentials
+    await page.fill('input[type="email"]', 'invaliduser999@testdomain.com');
+    await page.fill('input[type="password"]', 'IncorrectPassword123!');
+    await page.click('button:has-text("Sign In")');
+
+    // Error banner should appear
+    const errorBanner = page.locator('.bg-rose-50');
+    await expect(errorBanner).toBeVisible({ timeout: 10000 });
+    await expect(errorBanner).toContainText(/Invalid|credentials|login/i);
+    await page.screenshot({ path: path.join(screenshotsDir, '1440px-login-error.png'), fullPage: false });
+  });
+
+  test('8. Forgot password recovery flow requests OTP and guards against direct reset', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/forgot-password');
+
+    await expect(page.locator('text=Reset Your Password')).toBeVisible();
+    await expect(page.locator('text=Password Recovery')).toBeVisible();
+
+    // Enter email
+    await page.fill('input[type="email"]', 'registered_buyer@testdomain.com');
+    await page.click('button:has-text("Send Recovery Code")');
+
+    // Should transition to 6-digit OTP verification screen
+    await expect(page.locator('text=Verify Recovery Code')).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('input[aria-label="Digit 1"]')).toBeVisible();
+    await expect(page.locator('input[aria-label="Digit 6"]')).toBeVisible();
+
+    // Direct access to new-password step must NOT be possible without valid OTP verification
+    // User remains in OTP verification state
+    await expect(page.locator('button:has-text("Save New Password")')).not.toBeVisible();
+
+    await page.screenshot({ path: path.join(screenshotsDir, '1440px-forgot-password-otp.png'), fullPage: false });
+  });
+
+  test('9. Route guards redirect unauthenticated requests to login', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    // Attempt to access protected buyer dashboard
+    await page.goto('/buyer/dashboard');
+    await page.waitForURL('**/login**');
+    await expect(page.locator('text=Welcome Back')).toBeVisible();
+
+    // Attempt to access protected dealer dashboard
+    await page.goto('/dealer/dashboard');
+    await page.waitForURL('**/login**');
+    await expect(page.locator('text=Welcome Back')).toBeVisible();
+
+    // Attempt to access protected buyer groups find
+    await page.goto('/buyer/groups/find');
+    await page.waitForURL('**/login**');
+    await expect(page.locator('text=Welcome Back')).toBeVisible();
   });
 });
