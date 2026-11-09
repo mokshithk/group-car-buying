@@ -100,14 +100,9 @@ export function Navbar() {
                   Sign In
                 </Button>
               </Link>
-              <Link to="/register/buyer">
+              <Link to="/register">
                 <Button variant="primary" size="sm">
-                  Join as Buyer
-                </Button>
-              </Link>
-              <Link to="/register/dealer">
-                <Button variant="secondary" size="sm" className="hidden lg:inline-flex">
-                  Dealer Partner
+                  Register
                 </Button>
               </Link>
             </div>
@@ -190,14 +185,9 @@ export function Navbar() {
                     Sign In
                   </Button>
                 </Link>
-                <Link to="/register/buyer" onClick={() => setMobileMenuOpen(false)}>
+                <Link to="/register" onClick={() => setMobileMenuOpen(false)}>
                   <Button variant="primary" size="md" className="w-full">
-                    Create Buyer Account
-                  </Button>
-                </Link>
-                <Link to="/register/dealer" onClick={() => setMobileMenuOpen(false)}>
-                  <Button variant="outline" size="md" className="w-full text-slate-700 border-slate-300">
-                    Register Dealership
+                    Register
                   </Button>
                 </Link>
               </>

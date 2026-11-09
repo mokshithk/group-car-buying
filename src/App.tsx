@@ -5,8 +5,10 @@ import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 import { HomePage } from '@/pages/public/HomePage';
 import { CarDetailPage } from '@/pages/public/CarDetailPage';
 import { LoginPage } from '@/pages/auth/LoginPage';
+import { RegisterRoleChooserPage } from '@/pages/auth/RegisterRoleChooserPage';
 import { BuyerRegisterPage } from '@/pages/auth/BuyerRegisterPage';
 import { DealerRegisterPage } from '@/pages/auth/DealerRegisterPage';
+import { VerifyOtpPage } from '@/pages/auth/VerifyOtpPage';
 import { ForgotPasswordPage } from '@/pages/auth/ForgotPasswordPage';
 import { PendingApprovalPage } from '@/pages/dealer/PendingApprovalPage';
 import { BuyerDashboardPage } from '@/pages/buyer/BuyerDashboardPage';
@@ -55,8 +57,10 @@ export default function App() {
 
                 {/* Auth Pages */}
                 <Route path="/login" element={<LoginPage />} />
+                <Route path="/register" element={<RegisterRoleChooserPage />} />
                 <Route path="/register/buyer" element={<BuyerRegisterPage />} />
                 <Route path="/register/dealer" element={<DealerRegisterPage />} />
+                <Route path="/register/verify-otp" element={<VerifyOtpPage />} />
                 <Route path="/forgot-password" element={<ForgotPasswordPage />} />
                 <Route path="/dealer/pending-approval" element={<PendingApprovalPage />} />
                 <Route path="/dealer/pending" element={<PendingApprovalPage />} />

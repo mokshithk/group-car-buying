@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { Button, Input, Select, Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui';
+import { OtpVerification } from '@/components/auth/OtpVerification';
 import { fetchDistricts } from '@/lib/catalogService';
 import { District } from '@/types';
-import { Car, Lock, Mail, User, Phone, MapPin, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Car, Lock, Mail, User, Phone, MapPin, ArrowRight } from 'lucide-react';
 
 export function BuyerRegisterPage() {
   const [districts, setDistricts] = useState<District[]>([]);
@@ -16,7 +17,7 @@ export function BuyerRegisterPage() {
   const [consentShareDetails, setConsentShareDetails] = useState(false);
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isSuccessUnconfirmed, setIsSuccessUnconfirmed] = useState(false);
+  const [showOtp, setShowOtp] = useState(false);
 
   useEffect(() => {
     fetchDistricts().then((dList) => {
@@ -27,7 +28,7 @@ export function BuyerRegisterPage() {
     }).catch(console.error);
   }, [districtId]);
 
-  const { registerBuyer } = useAuth();
+  const { registerBuyer, refreshProfile } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirectUrl = searchParams.get('redirect');
@@ -36,6 +37,10 @@ export function BuyerRegisterPage() {
     e.preventDefault();
     if (!consentShareDetails) {
       setError('You must consent to sharing contact details with quoting dealerships upon expressing interest or booking.');
+      return;
+    }
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters long.');
       return;
     }
 
@@ -54,7 +59,7 @@ export function BuyerRegisterPage() {
 
     if (res.success) {
       if (res.requiresEmailConfirmation) {
-        setIsSuccessUnconfirmed(true);
+        setShowOtp(true);
       } else {
         navigate(redirectUrl || '/buyer/dashboard', { replace: true });
       }
@@ -62,6 +67,35 @@ export function BuyerRegisterPage() {
       setError(res.error || 'Registration failed');
     }
   };
+
+  if (showOtp) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-surface-canvas px-4 py-12">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-8">
+            <Link to="/" className="inline-flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center text-white shadow-sm">
+                <Car className="w-5 h-5" />
+              </div>
+              <span className="text-2xl font-bold tracking-tight text-slate-900">
+                Auto<span className="text-brand-600">Group</span>
+              </span>
+            </Link>
+          </div>
+          <OtpVerification
+            email={email}
+            type="signup"
+            title="Verify Buyer Account"
+            onSuccess={async () => {
+              await refreshProfile();
+              navigate(redirectUrl || '/buyer/dashboard', { replace: true });
+            }}
+            onChangeEmail={() => setShowOtp(false)}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-surface-canvas px-4 py-12">
@@ -82,31 +116,7 @@ export function BuyerRegisterPage() {
           </p>
         </div>
 
-        {isSuccessUnconfirmed ? (
-          <Card className="shadow-elevated border-slate-200/80 p-8 text-center">
-            <div className="w-14 h-14 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600 mx-auto mb-4 border border-emerald-100 shadow-sm">
-              <CheckCircle2 className="w-7 h-7" />
-            </div>
-            <h3 className="text-xl font-bold text-slate-900">Registration Successful!</h3>
-            <p className="text-sm text-slate-600 mt-2 leading-relaxed">
-              We have sent an activation email to <strong>{email}</strong>. Please check your inbox and click the confirmation link to activate your account.
-            </p>
-            <div className="mt-6 pt-6 border-t border-slate-100 space-y-3">
-              <Link to="/login">
-                <Button variant="primary" className="w-full">
-                  Go to Login
-                </Button>
-              </Link>
-              <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-left text-xs text-amber-900 space-y-1">
-                <p className="font-semibold text-amber-950">Tip for testing / development:</p>
-                <p>
-                  In your Supabase project, go to <strong>Authentication &gt; Providers &gt; Email</strong> and turn OFF <strong>"Confirm email"</strong>. This skips verification emails and logs users in immediately without rate limits.
-                </p>
-              </div>
-            </div>
-          </Card>
-        ) : (
-          <Card className="shadow-elevated border-slate-200/80">
+        <Card className="shadow-elevated border-slate-200/80">
           <CardHeader className="pb-2">
             <CardTitle className="text-base text-slate-900">Buyer Registration</CardTitle>
             <CardDescription>
@@ -222,7 +232,6 @@ export function BuyerRegisterPage() {
             </div>
           </CardContent>
         </Card>
-        )}
       </div>
     </div>
   );
