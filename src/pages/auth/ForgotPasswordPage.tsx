@@ -1,36 +1,285 @@
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button, Input, Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui';
-import { Car, Mail, ArrowLeft, CheckCircle2 } from 'lucide-react';
-import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { Car, Mail, Lock, ArrowLeft, CheckCircle2, ShieldCheck, Eye, EyeOff, KeyRound } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
+import { OtpVerification } from '@/components/auth/OtpVerification';
+
+type ResetStep = 'email' | 'otp' | 'new-password' | 'success';
 
 export function ForgotPasswordPage() {
+  const navigate = useNavigate();
+  const [step, setStep] = useState<ResetStep>('email');
   const [email, setEmail] = useState('');
-  const [isSubmitted, setIsSubmitted] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  // Password reset fields
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  // Password strength checks
+  const hasMinLength = newPassword.length >= 8;
+  const hasLetterAndNumber = /[a-zA-Z]/.test(newPassword) && /[0-9!@#$%^&*(),.?":{}|<>]/.test(newPassword);
+  const passwordsMatch = newPassword.length > 0 && newPassword === confirmPassword;
+
+  // Step 1: Submit email to request recovery OTP
+  const handleRequestOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      setError('Please provide a valid email address.');
+      return;
+    }
+
     setIsLoading(true);
 
     try {
-      if (isSupabaseConfigured()) {
-        const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-          redirectTo: window.location.origin + '/reset-password',
-        });
-        if (resetError) throw resetError;
+      const { error: resetErr } = await supabase.auth.resetPasswordForEmail(cleanEmail);
+
+      if (resetErr) {
+        // If rate limited or network failure, surface friendly error
+        const msg = resetErr.message.toLowerCase();
+        if (msg.includes('rate limit')) {
+          setError('Too many requests. Please wait a few moments before requesting another code.');
+          setIsLoading(false);
+          return;
+        }
       }
-      setIsSubmitted(true);
+
+      // Neutral enumeration protection: advance to OTP verification step
+      setStep('otp');
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to send reset link';
+      const msg = err instanceof Error ? err.message : 'Unable to dispatch recovery code.';
       setError(msg);
     } finally {
       setIsLoading(false);
     }
   };
 
+  // Step 3: Update password after OTP verified session established
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    if (!hasMinLength) {
+      setError('Password must be at least 8 characters in length.');
+      return;
+    }
+
+    if (newPassword !== confirmPassword) {
+      setError('The passwords do not match. Please verify your entry.');
+      return;
+    }
+
+    setIsUpdating(true);
+
+    try {
+      const { error: updateErr } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (updateErr) {
+        setError(updateErr.message || 'Failed to update password. Please try again.');
+        setIsUpdating(false);
+        return;
+      }
+
+      // Sign out of recovery session to require clean login with new password
+      await supabase.auth.signOut();
+      setStep('success');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to update password.';
+      setError(msg);
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  // STEP 2: Render OTP verification component
+  if (step === 'otp') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-surface-canvas px-4 py-12">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-8">
+            <Link to="/" className="inline-flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center text-white shadow-sm">
+                <Car className="w-5 h-5" />
+              </div>
+              <span className="text-2xl font-bold tracking-tight text-slate-900">
+                Auto<span className="text-brand-600">Group</span>
+              </span>
+            </Link>
+          </div>
+
+          <OtpVerification
+            email={email}
+            type="recovery"
+            title="Verify Recovery Code"
+            description={`If an account is registered with ${email}, a 6-digit recovery code has been dispatched.`}
+            onSuccess={() => {
+              setStep('new-password');
+            }}
+            onChangeEmail={() => {
+              setStep('email');
+            }}
+          />
+        </div>
+      </div>
+    );
+  }
+
+  // STEP 3: Render Set New Password component
+  if (step === 'new-password') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-surface-canvas px-4 py-12">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-8">
+            <Link to="/" className="inline-flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center text-white shadow-sm">
+                <Car className="w-5 h-5" />
+              </div>
+              <span className="text-2xl font-bold tracking-tight text-slate-900">
+                Auto<span className="text-brand-600">Group</span>
+              </span>
+            </Link>
+            <h2 className="mt-4 text-xl font-bold text-slate-900">Set New Password</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Identity verified. Choose a strong new password for your account.
+            </p>
+          </div>
+
+          <Card className="shadow-elevated border-slate-200/80">
+            <CardHeader className="pb-2">
+              <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center mb-2 border border-emerald-200">
+                <KeyRound className="w-5 h-5" />
+              </div>
+              <CardTitle className="text-base text-slate-900">Create New Password</CardTitle>
+              <CardDescription>
+                Your new password must be at least 8 characters long.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form onSubmit={handleUpdatePassword} className="space-y-4">
+                {error && (
+                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-medium text-rose-700">
+                    {error}
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <Input
+                    label="New Password"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="Enter at least 8 characters"
+                    required
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    leftIcon={<Lock className="w-4 h-4" />}
+                    rightIcon={
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="text-slate-400 hover:text-slate-600 p-1"
+                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    }
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Input
+                    label="Confirm New Password"
+                    type={showPassword ? 'text' : 'password'}
+                    placeholder="Confirm new password"
+                    required
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    leftIcon={<Lock className="w-4 h-4" />}
+                  />
+                </div>
+
+                {/* Password validation checklist */}
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1.5 text-xs">
+                  <div className={`flex items-center gap-2 ${hasMinLength ? 'text-emerald-700 font-medium' : 'text-slate-500'}`}>
+                    <CheckCircle2 className={`w-3.5 h-3.5 ${hasMinLength ? 'text-emerald-600' : 'text-slate-400'}`} />
+                    <span>At least 8 characters</span>
+                  </div>
+                  <div className={`flex items-center gap-2 ${hasLetterAndNumber ? 'text-emerald-700 font-medium' : 'text-slate-500'}`}>
+                    <CheckCircle2 className={`w-3.5 h-3.5 ${hasLetterAndNumber ? 'text-emerald-600' : 'text-slate-400'}`} />
+                    <span>Includes letters and numbers or symbols</span>
+                  </div>
+                  <div className={`flex items-center gap-2 ${passwordsMatch ? 'text-emerald-700 font-medium' : 'text-slate-500'}`}>
+                    <CheckCircle2 className={`w-3.5 h-3.5 ${passwordsMatch ? 'text-emerald-600' : 'text-slate-400'}`} />
+                    <span>Passwords match</span>
+                  </div>
+                </div>
+
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="lg"
+                  className="w-full font-semibold mt-2"
+                  isLoading={isUpdating}
+                  disabled={!hasMinLength || !passwordsMatch}
+                >
+                  Save New Password
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  // STEP 4: Render Success confirmation
+  if (step === 'success') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-surface-canvas px-4 py-12">
+        <div className="w-full max-w-md">
+          <div className="text-center mb-8">
+            <Link to="/" className="inline-flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center text-white shadow-sm">
+                <Car className="w-5 h-5" />
+              </div>
+              <span className="text-2xl font-bold tracking-tight text-slate-900">
+                Auto<span className="text-brand-600">Group</span>
+              </span>
+            </Link>
+          </div>
+
+          <Card className="shadow-elevated border-slate-200/80 text-center p-8">
+            <div className="w-14 h-14 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600 mx-auto mb-4 border border-emerald-100 shadow-sm">
+              <ShieldCheck className="w-7 h-7" />
+            </div>
+            <h3 className="text-xl font-bold text-slate-900">Password Reset Complete</h3>
+            <p className="text-sm text-slate-600 mt-2 leading-relaxed">
+              Your password has been securely updated. You can now log into your account using your new credentials.
+            </p>
+            <div className="mt-6 pt-6 border-t border-slate-100">
+              <Button
+                variant="primary"
+                size="lg"
+                className="w-full font-semibold"
+                onClick={() => navigate('/login')}
+              >
+                Sign In with New Password
+              </Button>
+            </div>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  // STEP 1: Request OTP by entering Email
   return (
     <div className="min-h-screen flex items-center justify-center bg-surface-canvas px-4 py-12">
       <div className="w-full max-w-md">
@@ -43,70 +292,54 @@ export function ForgotPasswordPage() {
               Auto<span className="text-brand-600">Group</span>
             </span>
           </Link>
-          <h2 className="mt-4 text-xl font-bold text-slate-900">Reset Password</h2>
+          <h2 className="mt-4 text-xl font-bold text-slate-900">Reset Your Password</h2>
           <p className="mt-1 text-sm text-slate-500">
-            We will send you a secure link to reset your password
+            Enter your registered email to receive a 6-digit verification code
           </p>
         </div>
 
         <Card className="shadow-elevated border-slate-200/80">
           <CardHeader className="pb-2">
-            <CardTitle className="text-base text-slate-900">Forgot Password</CardTitle>
-            <CardDescription>Enter your account email below</CardDescription>
+            <CardTitle className="text-base text-slate-900">Password Recovery</CardTitle>
+            <CardDescription>
+              We will send a 6-digit recovery code to your registered email address.
+            </CardDescription>
           </CardHeader>
           <CardContent>
-            {isSubmitted ? (
-              <div className="text-center py-6 space-y-3">
-                <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto">
-                  <CheckCircle2 className="w-6 h-6" />
+            <form onSubmit={handleRequestOtp} className="space-y-4">
+              {error && (
+                <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-medium text-rose-700">
+                  {error}
                 </div>
-                <h4 className="text-base font-bold text-slate-900">Check Your Email</h4>
-                <p className="text-xs text-slate-600">
-                  If an account exists for <strong>{email}</strong>, a password reset link has been dispatched.
-                </p>
-                <div className="pt-4">
-                  <Link to="/login">
-                    <Button variant="secondary" size="md">
-                      Return to Sign In
-                    </Button>
-                  </Link>
-                </div>
-              </div>
-            ) : (
-              <form onSubmit={handleSubmit} className="space-y-4">
-                {error && (
-                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-medium text-rose-700">
-                    {error}
-                  </div>
-                )}
-                <Input
-                  label="Email Address"
-                  type="email"
-                  placeholder="name@example.com"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  leftIcon={<Mail className="w-4 h-4" />}
-                />
-                <Button
-                  type="submit"
-                  variant="primary"
-                  size="lg"
-                  className="w-full font-semibold mt-2"
-                  isLoading={isLoading}
+              )}
+              <Input
+                label="Registered Email Address"
+                type="email"
+                placeholder="name@example.com"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                leftIcon={<Mail className="w-4 h-4" />}
+                helperText="We will never share your email address."
+              />
+              <Button
+                type="submit"
+                variant="primary"
+                size="lg"
+                className="w-full font-semibold mt-2"
+                isLoading={isLoading}
+              >
+                Send Recovery Code
+              </Button>
+              <div className="text-center pt-2">
+                <Link
+                  to="/login"
+                  className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900"
                 >
-                  Send Reset Link
-                </Button>
-                <div className="text-center pt-2">
-                  <Link
-                    to="/login"
-                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900"
-                  >
-                    <ArrowLeft className="w-3.5 h-3.5" /> Back to Sign In
-                  </Link>
-                </div>
-              </form>
-            )}
+                  <ArrowLeft className="w-3.5 h-3.5" /> Back to Sign In
+                </Link>
+              </div>
+            </form>
           </CardContent>
         </Card>
       </div>
