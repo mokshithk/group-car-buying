@@ -61,6 +61,20 @@ export function ForgotPasswordPage() {
         setError('This email is not registered. Please check the address or create an account.');
         setIsLoading(false);
         return;
+      } else if (rpcErr) {
+        // Resilient fallback: check public profiles table if RPC has not yet been applied
+        const { data: prof } = await supabase
+          .from('profiles')
+          .select('id')
+          .eq('email', cleanEmail)
+          .maybeSingle();
+
+        if (!prof) {
+          setIsNotRegistered(true);
+          setError('This email is not registered. Please check the address or create an account.');
+          setIsLoading(false);
+          return;
+        }
       }
 
       // 2. Dispatch recovery code via Supabase Auth

@@ -11,6 +11,10 @@ dist-ssr/
 # Environment files
 .env.local
 .env.*.local
+.env.test
+.env.test.local
+!.env.example
+!.env.test.example
 
 # Logs
 npm-debug.log*

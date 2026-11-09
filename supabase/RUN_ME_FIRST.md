@@ -18,28 +18,37 @@ Run each of these scripts in your Supabase SQL Editor in the exact sequence belo
    - Enables RLS on all tables.
    - Enforces isolation: buyers only see groups in their district; dealers cannot see buyer phone/email before an interest/booking; dealers only see their own leads and bookings; quotation controls.
 
-3. **Step 3: Base Trigger Schema**
-   - File: `supabase/migrations/003_auth_user_trigger.sql`
-   - Baseline trigger definitions on `auth.users`.
+3. **Step 3: Storage & Performance Indexes**
+   - File: `supabase/migrations/003_storage_and_indexes.sql`
+   - Configures storage buckets, retention policies, and performance indexes.
 
-4. **Step 4: Reliable Profile & Dealership Trigger (Hardened)**
-   - File: `supabase/migrations/004_reliable_profile_trigger.sql`
-   - Sets up hardened `handle_new_user()` trigger running with `SECURITY DEFINER`.
-   - Strictly enforces role safety (only `'buyer'` or `'dealer'`, never `'admin'`).
-   - Automatically provisions a pending showroom in `dealerships` linked to `dealer_users` for dealer accounts.
-   - Includes backfill for any existing accounts created before trigger setup.
-   - Adds explicit own-profile read/update RLS policies.
+4. **Step 4: Base Trigger Setup**
+   - File: `supabase/migrations/004_auth_profile_trigger.sql`
+   - Initial automatic profile creation trigger on signup.
 
-5. **Step 5: Catalog Seed Data**
+5. **Step 5: Dealer Verification & Admin Hardening**
+   - File: `supabase/migrations/005_dealer_verification_and_admin.sql`
+   - Upgraded `handle_new_user()` trigger defaulting missing metadata to `'buyer'` with `NULL` district without crashing.
+   - Strictly validates `role IN ('buyer', 'dealer')`.
+   - Protects dealership status mutations via `check_dealership_status_change()` trigger so only admins can alter `status`, `rejection_reason`, and `verified_at`.
+   - Adds `is_email_registered(p_email TEXT)` `SECURITY DEFINER` function for password recovery check.
+   - Adds RLS policies for admin oversight (`/admin/dealers`).
+
+6. **Step 6: Real Automotive Catalog Seed Data**
    - File: `supabase/seed.sql`
    - Seeds the real catalog: 15 Indian districts, 10 manufacturers, 12 car models, and 36 variants.
    - Pure catalog only — zero fake mock groups or fake dealerships.
    - Re-runnable: all inserts use `ON CONFLICT DO NOTHING;` and valid hex UUIDs.
 
-6. **Step 6 (Optional): Test & Demonstration Data**
+7. **Step 7 (Optional): Test & Demonstration Data**
    - File: `supabase/seed_demo.sql`
    - Seeds sample test dealerships (3 `VERIFIED`, 1 `PENDING`), test groups (illustrating visibility thresholds), and initial quotations for demonstration.
    - Re-runnable with valid hex UUIDs.
+
+8. **Step 8: Standardized Test Accounts Provisioning**
+   - File: `supabase/test_setup.sql`
+   - Sets roles and districts for 5 test accounts (`buyer1@domain.com`, `buyer2@domain.com`, `dealer1@domain.com`, `dealer2@domain.com`, `admin@domain.com`).
+   - Idempotent and guarded against running on non-test accounts.
 
 ---
 
@@ -50,60 +59,43 @@ For full instructions on configuring the 6-digit email OTP templates, token vari
 
 ### Quick Summary:
 - **Authentication > Providers > Email**: Enable Email Provider = `ON`, Confirm email = `ON` (or `OFF` for instant local testing).
-- **Authentication > Email Templates**: Replace default links with `{{ .Token }}` in "Confirm signup" and "Reset password".
+- **Authentication > Email Templates**: Replace default links with `{{ .Token }}` in "Confirm signup" and "Reset password". Production templates located in `docs/email-templates/`.
 - **Authentication > Rate Limits**: Set OTP length to 6 digits, expiration to 600 seconds.
 
 ---
 
-## 3. Setting Up Environment Variables
+## 3. Administrator Role Assignment
 
-1. Copy `.env.example` to `.env.local` in `D:\group-car-buying`:
-   ```bash
-   cp .env.example .env.local
-   ```
-2. Open `.env.local` and paste your project URL and public anon key from **Project Settings > API**:
-   ```env
-   VITE_SUPABASE_URL=https://your-project-ref.supabase.co
-   VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5c...
-   ```
-   *(Never commit `.env.local`. It is already excluded in `.gitignore`.)*
+To promote any registered user to platform administrator (granting full access to `/admin/dealers`):
+
+```sql
+UPDATE public.profiles
+SET role = 'admin',
+    updated_at = NOW()
+WHERE id = (SELECT id FROM auth.users WHERE email = '<admin_email_address>');
+```
 
 ---
 
 ## 4. Manual Dealer Approval Snippet
 
-When a dealership registers via `/register/dealer`, its initial status is `PENDING`. Run this SQL query in Supabase to approve the showroom:
+When a dealership registers via `/register/dealer`, its initial status is `PENDING`. It can be approved via the `/admin/dealers` UI or by running:
 
 ```sql
 UPDATE public.dealerships
 SET status = 'VERIFIED',
-    verified_at = NOW()
-WHERE showroom_name = 'Your Dealership Name'
-   OR owner_email = 'dealer@dealership.com';
-```
-
-Verify the approval status:
-```sql
-SELECT id, showroom_name, status, owner_email, verified_at 
-FROM public.dealerships;
+    verified_at = NOW(),
+    updated_at = NOW()
+WHERE name = '<Showroom Name>'
+   OR contact_email = '<dealer@dealership.com>';
 ```
 
 ---
 
-## 5. SQL Verification Checks (RLS Isolation)
+## 5. Automated SQL Verification Test Suite
 
-Run these queries to verify data isolation:
-
-```sql
--- 1. Profiles query (should only return own user profile under RLS):
-SELECT id, full_name, phone, role FROM public.profiles;
-
--- 2. Group visibility rule verification:
-SELECT 
-    id, 
-    variant_name, 
-    active_members, 
-    bookings_so_far, 
-    is_visible 
-FROM public.dealer_eligible_groups_view;
-```
+Run the SQL verification test suite in `supabase/tests/rls_and_business_rules.sql` in the Supabase SQL Editor. It validates:
+1. Group visibility logic (1 member hidden, 3 members visible).
+2. `is_email_registered` function behavior.
+3. Dealership status change protection trigger (blocks non-admins from self-approving).
+4. RLS enabled status across all core tables.

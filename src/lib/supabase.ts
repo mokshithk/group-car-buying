@@ -1,13 +1,17 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://placeholder-project.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'placeholder-anon-key';
+const env = (typeof import.meta !== 'undefined' && import.meta.env)
+  ? import.meta.env
+  : ((typeof process !== 'undefined' && process.env) ? (process.env as any) : {});
+
+const supabaseUrl = env.VITE_SUPABASE_URL || 'https://placeholder-project.supabase.co';
+const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || 'placeholder-anon-key';
 
 export const isSupabaseConfigured = () => {
   return (
-    !!import.meta.env.VITE_SUPABASE_URL &&
-    !!import.meta.env.VITE_SUPABASE_ANON_KEY &&
-    import.meta.env.VITE_SUPABASE_URL !== 'https://placeholder-project.supabase.co'
+    !!env.VITE_SUPABASE_URL &&
+    !!env.VITE_SUPABASE_ANON_KEY &&
+    env.VITE_SUPABASE_URL !== 'https://placeholder-project.supabase.co'
   );
 };
 

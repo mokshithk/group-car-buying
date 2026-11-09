@@ -171,3 +171,16 @@
   - Protected routes against missing profiles and unrecognized roles with clear error screen and sign-out action
   - Created `docs/auth-setup.md` with complete email templates (`{{ .Token }}`), SMTP guidance, and OTP settings
   - Updated Playwright E2E test suite covering role chooser, registration OTP, password recovery OTP, error states, and route guards
+
+- [x] **Task 20**: Complete Dealer Approval, Status Pages, Admin Portal, Tests & Documentation
+  - Rewrote Dealer Pending page to display real showroom name, GSTIN, brands, district, address, and PENDING status directly from DB
+  - Implemented 6-digit Email OTP verification with auto-focus, paste support, and auto-submit on 6th digit
+  - Built status-aware login redirecting to buyer dashboard, dealer dashboard, dealer pending, dealer status, or admin portal
+  - Built `/dealer/status` page for rejected and suspended dealerships showing rejection reason and compliance contact info
+  - Built `/admin/dealers` administrative verification portal with status filter tabs, search, and approve/reject/suspend modal actions
+  - Added migration `005_dealer_verification_and_admin.sql` with hardened trigger, admin-only status modification trigger, and `is_email_registered()` function
+  - Created transactional email templates in `docs/email-templates/` (`confirm-signup.html`/`.txt` and `reset-password.html`/`.txt`)
+  - Added test accounts setup (`.env.test.example`, `supabase/test_setup.sql`)
+  - Added pure unit tests (`tests/unit/business-rules.spec.ts`) covering INR formatting, refund math, quote ranking, and incomplete quote validation
+  - Updated Playwright E2E suite (`tests/e2e.spec.ts`) to 13 tests covering all responsive viewports, registration, error banners, route guards, and status views
+  - Created comprehensive QA report (`docs/test-report.md`), refreshed `README.md`, `supabase/RUN_ME_FIRST.md`, and `docs/auth-setup.md`

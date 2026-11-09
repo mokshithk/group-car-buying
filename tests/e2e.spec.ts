@@ -207,12 +207,29 @@ test.describe('Group Car Buying Platform E2E Suite', () => {
 
   test('8. Forgot password recovery flow requests OTP and guards against direct reset', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
+
+    // Mock RPC and recover response for registered email test flow
+    await page.route('**/rest/v1/rpc/is_email_registered*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(true),
+      });
+    });
+    await page.route('**/auth/v1/recover*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({}),
+      });
+    });
+
     await page.goto('/forgot-password');
 
     await expect(page.locator('text=Reset Your Password')).toBeVisible();
     await expect(page.locator('text=Password Recovery')).toBeVisible();
 
-    // Enter email
+    // Enter registered email
     await page.fill('input[type="email"]', 'registered_buyer@testdomain.com');
     await page.click('button:has-text("Send Recovery Code")');
 
@@ -243,6 +260,62 @@ test.describe('Group Car Buying Platform E2E Suite', () => {
 
     // Attempt to access protected buyer groups find
     await page.goto('/buyer/groups/find');
+    await page.waitForURL('**/login**');
+    await expect(page.locator('text=Welcome Back')).toBeVisible();
+  });
+
+  test('10. Dealer status page displays status notice, details, and compliance contact', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/dealer/status');
+
+    // Verify title and status elements
+    const statusHeading = page.locator('text=Account Under Review')
+      .or(page.locator('text=Dealership Application Rejected'))
+      .or(page.locator('text=Dealership Account Suspended'));
+    await expect(statusHeading.first()).toBeVisible();
+
+    await expect(page.locator('text=support@autogroup.in')).toBeVisible();
+    await expect(page.locator('text=Sign Out')).toBeVisible();
+    await expect(page.locator('text=Re-check Status')).toBeVisible();
+
+    await page.screenshot({ path: path.join(screenshotsDir, '1440px-dealer-status.png'), fullPage: false });
+  });
+
+  test('11. Password strength hints render in registration forms', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/register/buyer');
+
+    const passwordInput = page.locator('input[type="password"]');
+    await passwordInput.fill('short');
+
+    // Verify strength hints appear
+    await expect(page.locator('text=8+ characters')).toBeVisible();
+    await expect(page.locator('text=Letters & numbers/symbols')).toBeVisible();
+
+    // Type strong password
+    await passwordInput.fill('SecurePass123!');
+    // Green indicators should be active
+    await expect(page.locator('.text-emerald-600').first()).toBeVisible();
+  });
+
+  test('12. Forgot password shows unregistered email error with link to register', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/forgot-password');
+
+    await page.fill('input[type="email"]', 'completely_unregistered_email_9999@test.com');
+    await page.click('button:has-text("Send Recovery Code")');
+
+    // Should display unregistered warning
+    const alert = page.locator('.bg-rose-50').or(page.locator('text=This email is not registered'));
+    await expect(alert.first()).toBeVisible({ timeout: 10000 });
+    await expect(page.locator('a[href="/register"]').first()).toBeVisible();
+
+    await page.screenshot({ path: path.join(screenshotsDir, '1440px-forgot-password-unregistered.png'), fullPage: false });
+  });
+
+  test('13. Admin route guards redirect unauthenticated access to login', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/admin/dealers');
     await page.waitForURL('**/login**');
     await expect(page.locator('text=Welcome Back')).toBeVisible();
   });

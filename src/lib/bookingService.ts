@@ -219,6 +219,41 @@ export async function executeBooking(
 }
 
 /**
+ * Pure calculation helper for Buyer Cancellation:
+ * 5% retained by showroom, platform fee is NOT refunded.
+ */
+export function calculateBuyerRefund(bookingAmount: number, platformFee: number = 999) {
+  const retentionPercent = 0.05; // 5%
+  const retainedAmount = Math.round(bookingAmount * retentionPercent);
+  const refundAmount = bookingAmount - retainedAmount;
+  const platformFeeNonRefunded = platformFee;
+  const buyerLostAmount = retainedAmount + platformFeeNonRefunded;
+  return {
+    refundAmount,
+    retainedAmount,
+    platformFeeNonRefunded,
+    buyerLostAmount,
+  };
+}
+
+/**
+ * Pure calculation helper for Dealer Fault Cancellation:
+ * 100% of booking amount + platform fee refunded to buyer, showroom receives 0.
+ */
+export function calculateDealerFaultRefund(bookingAmount: number, platformFee: number = 999) {
+  const bookingAmountRefunded = bookingAmount;
+  const platformFeeRefunded = platformFee;
+  const totalRefunded = bookingAmountRefunded + platformFeeRefunded;
+  const showroomRetained = 0;
+  return {
+    totalRefunded,
+    bookingAmountRefunded,
+    platformFeeRefunded,
+    showroomRetained,
+  };
+}
+
+/**
  * 3. Buyer Cancellation:
  * 5% retained by showroom, platform fee is NOT refunded.
  */
@@ -240,10 +275,10 @@ export async function cancelBookingByBuyer(
 
   if (error || !b) throw new Error('Booking not found');
 
-  const retentionPercent = 0.05; // 5%
-  const retainedAmount = Math.round(b.booking_amount * retentionPercent);
-  const refundAmount = b.booking_amount - retainedAmount;
-  const platformFeeNonRefunded = b.platform_fee;
+  const { refundAmount, retainedAmount, platformFeeNonRefunded } = calculateBuyerRefund(
+    b.booking_amount,
+    b.platform_fee
+  );
 
   await supabase
     .from('bookings')
@@ -292,9 +327,8 @@ export async function cancelBookingByDealerFault(
 
   if (error || !b) throw new Error('Booking not found');
 
-  const bookingAmountRefunded = b.booking_amount;
-  const platformFeeRefunded = b.platform_fee;
-  const totalRefunded = bookingAmountRefunded + platformFeeRefunded;
+  const { totalRefunded, bookingAmountRefunded, platformFeeRefunded } =
+    calculateDealerFaultRefund(b.booking_amount, b.platform_fee);
 
   await supabase
     .from('bookings')

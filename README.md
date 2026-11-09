@@ -26,11 +26,15 @@ Built with **React 18**, **TypeScript**, **Tailwind CSS**, **Vite**, **Supabase*
 - **Delivery Confirmation & Reviews**: "I received my car" marks booking as DELIVERED and unlocks dealership rating and reporting.
 
 ### Dealer Module
-- **Showroom Profile & Multi-Branch**: Configure authorized brands, operating districts, GST, contact info, and map links.
-- **Staff Management**: Assign owner and staff roles.
+- **Showroom Profile & Multi-Branch**: Configure authorized brands, operating districts, GST, contact info, and address.
 - **Eligible Groups**: Filter eligible groups based on dealership's brand, district, and platform visibility rules.
 - **Quote Submission & Versioning**: Live on-road calculation with complete price versioning and audit history.
 - **Leads & Bookings Management**: Real-time feed of interested buyers and paid bookings with locked price snapshots.
+
+### Admin Module (`/admin/dealers`)
+- **Dealership Verification**: Dedicated administrative portal for reviewing dealership applications across All, Pending, Verified, Rejected, and Suspended statuses.
+- **Action Modals**: Approve, Reject (with required reason), and Suspend actions with confirmation modals.
+- **Audit Logging & Notifications**: Writes all status modifications to `audit_log` and issues notifications to dealership contacts.
 
 ---
 
@@ -63,21 +67,33 @@ VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
 Run the SQL scripts in your Supabase SQL Editor in this exact order:
 1. `supabase/migrations/001_initial_schema.sql` - Core schema, tables, constraints, visibility functions, and triggers.
 2. `supabase/migrations/002_rls_policies.sql` - Row-level security policies enforcing buyer privacy and dealership isolation.
-3. `supabase/migrations/003_auth_user_trigger.sql` - Base authentication trigger setup.
-4. `supabase/migrations/004_reliable_profile_trigger.sql` - Hardened `handle_new_user()` `SECURITY DEFINER` trigger, strict role enforcement (`'buyer'` / `'dealer'`), pending dealership provisioning, and RLS policies.
-5. `supabase/seed.sql` - Real catalog data (15 districts, 10 manufacturers, 12 models, 36 variants). Pure catalog with zero fake data.
-6. `supabase/seed_demo.sql` - (Optional) Sample demonstration data (test dealerships, demo buying groups, initial quotes).
+3. `supabase/migrations/003_storage_and_indexes.sql` - Performance indexes and document storage.
+4. `supabase/migrations/004_auth_profile_trigger.sql` - Base automatic profile creation trigger.
+5. `supabase/migrations/005_dealer_verification_and_admin.sql` - Hardened trigger (`handle_new_user()`), admin dealership status mutation lock, and `is_email_registered()` function.
+6. `supabase/seed.sql` - Real catalog data (15 districts, 10 manufacturers, 12 models, 36 variants). Pure catalog with zero fake data.
+7. `supabase/seed_demo.sql` - (Optional) Realistic test dealerships, demo buying groups, and quotations.
+8. `supabase/test_setup.sql` - Provisions the 5 standardized test accounts for automated & manual verification.
 
-For detailed 6-digit Email OTP configuration and email templates with `{{ .Token }}`, see [docs/auth-setup.md](docs/auth-setup.md).
+For complete 6-digit Email OTP configuration and email templates with `{{ .Token }}`, see [docs/auth-setup.md](docs/auth-setup.md).
+
+#### Admin Role Assignment Snippet
+To grant admin privileges to an account, run this query in your Supabase SQL Editor:
+```sql
+UPDATE public.profiles
+SET role = 'admin',
+    updated_at = NOW()
+WHERE id = (SELECT id FROM auth.users WHERE email = '<admin_email_address>');
+```
 
 #### Manual Dealer Approval Snippet
-Newly registered dealerships start with status `PENDING` until reviewed. Run this SQL query in your Supabase SQL Editor to verify a showroom:
+Newly registered dealerships start with status `PENDING` until approved via `/admin/dealers` or direct SQL:
 ```sql
 UPDATE public.dealerships
 SET status = 'VERIFIED',
-    verified_at = NOW()
-WHERE showroom_name = '<Showroom Name>'
-   OR owner_email = '<dealer@dealership.com>';
+    verified_at = NOW(),
+    updated_at = NOW()
+WHERE name = '<Dealership Showroom Name>'
+   OR contact_email = '<dealer_contact_email>';
 ```
 
 ---
@@ -92,15 +108,22 @@ The platform does not process real card transactions. The payment layer in `src/
 
 The checkout interface provides a visible **"Test Mode: No real money is charged"** banner, allowing testers to trigger success, cancellation, or failure states to verify idempotent booking creation and automatic group member removal.
 
-### Admin Module Scope
-The platform schema fully supports platform-wide administrative controls (`settings` table, dealer verification statuses, platform fee overrides). The Admin UI is out of current scope and can be added using the existing schema foundation.
-
 ---
 
 ## Testing & Quality Assurance
 
+### Pure Unit Tests
+Run the unit test suite covering currency formatting, refund math, and quotation rankings:
+```bash
+npm run test:unit
+```
+
 ### End-to-End Tests with Playwright
-Run the complete E2E test suite:
+Run all unit and E2E tests:
+```bash
+npm test
+```
+Or run E2E suite specifically:
 ```bash
 npm run test:e2e
 ```
@@ -110,3 +133,4 @@ npx playwright test --ui
 ```
 
 All responsive screenshots at 360px, 768px, and 1440px are saved to `docs/screenshots/`.
+Comprehensive test reports and verification matrices are documented in [docs/test-report.md](docs/test-report.md).

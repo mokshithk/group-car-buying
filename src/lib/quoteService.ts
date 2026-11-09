@@ -179,6 +179,45 @@ export function isQuoteExpired(validityDate: string): boolean {
 
 /**
  * Business Rule:
+ * Incomplete quote check:
+ * Quote missing insurance or registration (<= 0 or not provided) is flagged incomplete.
+ */
+export function isQuoteComplete(quote: {
+  insurance?: number | null;
+  registrationCharges?: number | null;
+  registration_charges?: number | null;
+  exShowroomPrice?: number | null;
+  ex_showroom_price?: number | null;
+}): boolean {
+  const insurance = Number(quote.insurance ?? 0);
+  const registration = Number(quote.registrationCharges ?? quote.registration_charges ?? 0);
+  return insurance > 0 && registration > 0;
+}
+
+/**
+ * Business Rule:
+ * Incomplete quotes are flagged and EXCLUDED from "lowest price" and savings.
+ * Expired quotes are greyed and disabled.
+ * Competitor quote ranking: lowest complete on-road price first.
+ */
+export function rankQuotes<T extends { id: string; on_road_price: number; is_complete: boolean; validity_date: string }>(
+  quotes: T[]
+) {
+  const validComplete = quotes
+    .filter((q) => q.is_complete && !isQuoteExpired(q.validity_date))
+    .sort((a, b) => a.on_road_price - b.on_road_price);
+
+  const lowestCompleteQuote = validComplete.length > 0 ? validComplete[0] : null;
+
+  return {
+    rankedCompleteQuotes: validComplete,
+    lowestCompleteQuote,
+    isLowestPrice: (quoteId: string) => lowestCompleteQuote?.id === quoteId,
+  };
+}
+
+/**
+ * Business Rule:
  * Incomplete quotes are flagged and EXCLUDED from "lowest price" and savings.
  * Expired quotes are greyed and disabled.
  * Savings only calculated between complete, valid quotes.
