@@ -123,7 +123,7 @@ D:\group-car-buying
 │   │   ├── admin/                # All 24 Admin Console & Auth Flow screens
 │   │   ├── auth/                 # Login, Register Chooser, Buyer/Dealer Reg, Verify OTP, Forgot Password
 │   │   ├── buyer/                # Buyer dashboard, groups, offers comparison, checkout, bookings, privacy
-│   │   ├── dealer/               # Dealer dashboard, pending, status, groups, quote submit, leads, bookings
+│   │   ├── dealer/               # Dealer dashboard, pending, status, groups, quotes, quote submit, leads, bookings, staff
 │   │   └── public/               # HomePage, CarDetailPage
 │   └── types/
 │       └── database.ts
@@ -136,7 +136,8 @@ D:\group-car-buying
 │   │   ├── 004_reliable_profile_trigger.sql
 │   │   ├── 005_dealer_verification_and_admin.sql
 │   │   ├── 006_admin_module.sql
-│   │   └── 007_fix_dealer_users_rls_recursion.sql
+│   │   ├── 007_fix_dealer_users_rls_recursion.sql
+│   │   └── 008_platform_integrity_and_fixes.sql
 │   ├── tests/
 │   │   ├── rls_and_business_rules.sql
 │   │   └── admin_rls_and_rules.sql
@@ -169,8 +170,8 @@ D:\group-car-buying
 ### 3.3 Admin Role Hierarchy, RLS & Audit Trail
 - Roles: `super_admin` (full control, admin invites/management, platform settings), `admin` (operations, moderation, read-only settings), `dealer`, `buyer`.
 - Signup triggers restrict public self-signup metadata strictly to `'buyer'` or `'dealer'`.
-- Helper functions `is_admin()`, `is_super_admin()`, and `is_dealer_owner_of()` execute as `SECURITY DEFINER` to eliminate RLS recursion (`42P17`) while keeping read/write checks isolated.
-- Direct client updates to sensitive columns (`profiles.role`, `profiles.status`, `must_change_password`, `dealerships.status`) are blocked by triggers; mutations must execute via `SECURITY DEFINER` RPCs that atomically write to append-only `audit_log`.
+- Helper functions `is_admin()`, `is_super_admin()`, `is_dealer_owner_of()`, and `fn_is_group_visible_to_dealers()` execute as `SECURITY DEFINER` to eliminate RLS recursion (`42P17`) while keeping read/write checks isolated.
+- Direct client updates to sensitive columns (`profiles.role`, `profiles.status`, `must_change_password`, `dealerships.status`, direct booking status changes) are blocked by triggers; sensitive buyer, dealer, and admin workflows run through `SECURITY DEFINER` RPCs (`create_buying_group`, `join_buying_group`, `leave_buying_group`, `cancel_booking_atomic`, `confirm_booking_delivery`, `get_dealer_staff`, `manage_dealer_staff`, `get_group_member_summaries`, `get_group_public_metrics`, and `admin_*` RPCs in `006`/`008`) that validate state transitions and write audit entries cleanly.
 - Last active `super_admin` cannot be demoted, deactivated, or deleted.
 - Sensitive admin actions require password re-authentication (`ReAuthModal`) and audit reason logging.
 - Admin sessions enforce a configurable 30-minute idle timeout with a 1-minute warning prompt.

@@ -3,14 +3,15 @@
 ## 1. Execution Summary
 
 - **Date of Verification**: `2026-11-10`
-- **Target Backend**: Remote Supabase project `hjqpprhljvwmcelgwznq` (`migrations 001`–`007` applied)
-- **Unit Tests**: **11 passed** (`tests/unit/business-rules.spec.ts`)
-- **Playwright E2E Tests**: **21 passed** (`14` in `tests/e2e.spec.ts` + `7` in `tests/admin.e2e.spec.ts`) — **32 total Playwright checks passed** (`0` failed, `0` skipped)
+- **Target Backend**: Remote Supabase project `hjqpprhljvwmcelgwznq` (`migrations 001`–`007` active remotely during suite run; `008_platform_integrity_and_fixes.sql` authored locally with pre-`008` fallback compatibility pending push)
+- **Unit Tests**: **15 passed** (`tests/unit/business-rules.spec.ts`)
+- **Playwright E2E Tests**: **24 passed** (`16` in `tests/e2e.spec.ts` + `8` in `tests/admin.e2e.spec.ts`) — **39 total Playwright checks passed** (`0` failed, `0` skipped)
 - **Static Quality Gates**:
   - `npm run typecheck`: `0` errors (`src` and `api`)
-  - `npm run lint`: `0` errors (`4` pre-existing warnings in non-admin files `Toast.tsx`, `AuthContext.tsx`, `DealerStatusPage.tsx`, `PendingApprovalPage.tsx`)
-  - `npm run build`: clean Vite production build (`dist/index.html`, `1722` modules transformed)
-- **Database Schema & RLS Status**: `24` public tables with Row-Level Security (`RLS`) enabled, `24` admin/helper SQL functions and `65` RLS policies verified at migration `006` (plus `is_dealer_owner_of` replacing `3` recursive policies in `007`). Non-destructive SQL test suite (`supabase/tests/admin_rls_and_rules.sql`) passed remotely prior to `007_fix_dealer_users_rls_recursion.sql`; post-`007` authenticated queries and live admin RPCs were verified via live Supabase queries and the `32/32` Playwright suite.
+  - `npm run lint`: `0` errors (`2` pre-existing fast-refresh warnings in `Toast.tsx` and `AuthContext.tsx`)
+  - `npm run build`: clean Vite production build (`dist/index.html`, `1723` modules transformed)
+- **Live Route Crawler (`360px` & `1440px`)**: Audited `57` public, buyer, dealer, and admin routes with `0` JS page errors and `0` horizontal overflows (`360px` and `1440px`); only the three new `008` RPC endpoints (`get_group_public_metrics`, `get_group_member_summaries`, `get_dealer_staff`) returned HTTP `404` prior to applying `008` remotely.
+- **Database Schema & RLS Status**: `24` public tables with Row-Level Security (`RLS`) enabled, `24` admin/helper SQL functions and `65` RLS policies verified at migration `006` (plus `is_dealer_owner_of` replacing `3` recursive policies in `007`). Non-destructive SQL test suite (`supabase/tests/admin_rls_and_rules.sql`) includes Test 12 for `008` group RPCs & admin cancellation release (to run when applying `008` via `.\scripts\run-remote-setup.ps1 -MigrationsOnly`).
 
 ---
 
@@ -32,7 +33,7 @@
 
 ## 3. Test Suites Covered
 
-- **Pure Unit Suite (`tests/unit/business-rules.spec.ts`, `11` tests)**:
+- **Pure Unit Suite (`tests/unit/business-rules.spec.ts`, `15` tests)**:
   1. `formatINR` currency formatting (`0`, large numbers, negatives, decimals)
   2. Strict cancellation refund math
   3. Competitor quote ranking (lowest complete on-road price first, excluding incomplete quotes from badge)
@@ -44,10 +45,14 @@
   9. `buildCsvContent` CSV quoting and spreadsheet formula injection neutralization
   10. `generateInviteToken` (`48` hex chars) and `sha256Hex` (`64`-char digest)
   11. `sealToken` / `unsealToken` AES-256-GCM OTP challenge encryption, tamper rejection, and `safeCodeEquals` timing-safe comparison
-- **Core Platform E2E (`tests/e2e.spec.ts`, `14` tests)**:
-  Exercises public browsing, role chooser, buyer/dealer signup OTP screen transitions, forgot-password flow (including fail-closed `503` guard and OTP -> `/api/auth/reset-password` completion), dealer pending/status screens, login errors, and unauthenticated route guards (`admin` and buyer/dealer).
-- **Admin Module E2E (`tests/admin.e2e.spec.ts`, `7` tests)**:
-  Exercises RBAC (`buyer`/`dealer`/`admin`/`super_admin`), live dashboard metrics/chart/responsive viewports, dealership moderation lifecycle with re-authentication, buyers/catalogue/districts/groups/quotations/bookings/reports/ratings live rendering, super-admin invites + Account password guard, and Settings cap validation + audit log persistence + formula-safe CSV export against remote `hjqpprhljvwmcelgwznq`.
+  12. `rankQuotes` / `isQuoteExpired` filtering of inactive, expired, and malformed validity dates
+  13. `detectQuoteOutliers` exclusion of inactive and expired quotations from group median math
+  14. `sanitizePostgrestSearch` filter delimiter stripping and integer-setting decimal rejection
+  15. `paymentService` checkout intent correlation (`bookingId`, amount, payment method)
+- **Core Platform E2E (`tests/e2e.spec.ts`, `16` tests)**:
+  Exercises public browsing, HomePage fuel filtering/reset, Footer governance modals, role chooser, buyer/dealer signup OTP screen transitions, forgot-password flow (including fail-closed `503` guard and OTP -> `/api/auth/reset-password` completion), authenticated dealer `/dealer/quotes`, `/dealer/groups`, and `/dealer/profile` navigation + 360px overflow checks, dealer pending/status screens, login errors, and unauthenticated route guards (`admin`, buyer, and dealer).
+- **Admin Module E2E (`tests/admin.e2e.spec.ts`, `8` tests)**:
+  Exercises RBAC (`buyer`/`dealer`/`admin`/`super_admin`), live dashboard metrics/chart/responsive viewports, dealership moderation lifecycle with re-authentication, buyers/catalogue/districts/groups/quotations/bookings/reports/ratings live rendering, super-admin invites + Account password guard, Settings cap validation + audit log persistence + formula-safe CSV export, and `360px` mobile zero-overflow checks across tabbed Admin tables against remote `hjqpprhljvwmcelgwznq`.
 - **SQL Non-Destructive RLS Suite (`supabase/tests/admin_rls_and_rules.sql`)**:
   Executed against remote `hjqpprhljvwmcelgwznq` (verified clean exit prior to `007`).
 
@@ -96,12 +101,17 @@ Visual layout verification was executed across `360px` mobile, `768px` tablet, a
    - *Symptom*: Hosted Vercel builds served static `dist/` without Vite's `smtpEmailPlugin` middleware, causing `POST /api/auth/send-otp` to `404` while `ForgotPasswordPage.tsx` swallowed the error and opened the OTP screen anyway with no email sent; additionally, `supabase.auth.updateUser` lacked a logged-in recovery session.
    - *Fix*: Extracted shared stateless handlers into `api/_lib/otpService.ts` + AES-256-GCM tokens (`api/_lib/otpToken.ts`), added Vercel Serverless Functions `api/auth/{smtp-status,send-otp,verify-otp,reset-password}.ts` with Node ESM `.js` imports + `vercel.json` rewrites, failed closed on non-OK `/api/auth/send-otp` responses, and completed password updates via `/api/auth/reset-password`.
 
+8. **Cross-Module Bugs Fixed During Full Feature Audit (`008` + App Changes)**:
+   - *Symptom*: Several buyer pages (`InterestedPage`, `BookingPaymentPage`, `FindGroupsPage`, `CreateGroupPage`, `WishlistPage`, `ProfilePrivacyPage`, `NotificationsPage`) relied on fallback mock IDs/phones or stale closures; `DealerQuotationsPage` had no dedicated `/dealer/quotes` screen, `SubmitQuotePage` simulated submission without DB writes, `DealerBookingsPage` bypassed `dealerDeliveryFallbackDays`, and `Tabs.tsx` overflowed horizontally on `360px` Admin screens.
+   - *Fix*: Wired live DB queries/RPCs across all Buyer, Dealer, Admin, Auth, and Public views, added `/dealer/quotes`, wrapped Admin tab pills for `360px`, added timezone-safe audit/export filtering, sanitized `.or()` searches, and authored `008_platform_integrity_and_fixes.sql` + missing catalog variants.
+
 ---
 
 ## 6. Manual Verification Checklist (Post-Setup)
 
 Items requiring live external credentials or manual human verification outside automated runs:
 
-- [ ] **Vercel Environment Variables & Live Redeploy Check**: Set `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SMTP_EMAIL`, `SMTP_PASSWORD`, `SMTP_SERVER`, `SMTP_PORT`, `SUPABASE_SERVICE_ROLE_KEY`, and `OTP_SIGNING_SECRET` in Vercel Project Settings -> Environment Variables, redeploy, and verify live Forgot Password OTP delivery and password reset on mobile & desktop.
+- [ ] **Apply Migration `008` to Remote Supabase**: Run `.\scripts\run-remote-setup.ps1 -MigrationsOnly` (or execute `supabase/migrations/008_platform_integrity_and_fixes.sql` in SQL Editor) so the new RPCs (`get_group_public_metrics`, `get_group_member_summaries`, `get_dealer_staff`, etc.), `16` additional catalog variants, and atomic triggers go live on `hjqpprhljvwmcelgwznq`.
+- [x] **Vercel Environment Variables & Live Redeploy Check**: Configured `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SMTP_EMAIL`, `SMTP_PASSWORD`, `SMTP_SERVER`, `SMTP_PORT`, `SUPABASE_SERVICE_ROLE_KEY`, and `OTP_SIGNING_SECRET` in Vercel Project Settings -> Environment Variables and verified live OTP delivery and password reset on `https://group-car-buying.vercel.app`.
 - [ ] **Live `.env.local` Gmail SMTP Inbox Test**: Confirm real SMTP credentials (`SMTP_EMAIL`, `SMTP_PASSWORD`) in local `.env.local` deliver a live OTP email when accepting an invite end-to-end via `/admin/accept-invite`.
 - [ ] **Post-Setup Security Hygiene**: Store the updated `autogroup256@gmail.com` (`super_admin`) password in a password manager, revoke the temporary Supabase Personal Access Token in Supabase Account Settings, and close/clear any terminal session holding `SUPABASE_ACCESS_TOKEN` or `SUPABASE_DB_PASSWORD`.

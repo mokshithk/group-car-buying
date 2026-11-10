@@ -307,4 +307,22 @@ test.describe('Admin Module Real Supabase E2E Suite', () => {
     ]);
     expect(download.suggestedFilename()).toContain('autogroup-revenue-summary');
   });
+
+  test('8. Admin mobile 360px viewport has zero horizontal overflow across tabbed table screens', async ({ page }) => {
+    test.skip(!testEnv.TEST_SUPER_ADMIN_EMAIL || !testEnv.TEST_SUPER_ADMIN_PASSWORD, '.env.test super_admin credentials required');
+
+    await signOutCleanly(page);
+    await page.setViewportSize({ width: 360, height: 740 });
+    await signInViaSharedLogin(page, testEnv.TEST_SUPER_ADMIN_EMAIL, testEnv.TEST_SUPER_ADMIN_PASSWORD);
+    await expect(page).toHaveURL(/\/admin\/dashboard/, { timeout: 15000 });
+
+    for (const route of ['/admin/dealers', '/admin/groups', '/admin/bookings', '/admin/admins']) {
+      await page.goto(route);
+      await expect(page.locator('.animate-pulse')).toHaveCount(0, { timeout: 15000 });
+      const overflowPx = await page.evaluate(
+        () => document.documentElement.scrollWidth - window.innerWidth
+      );
+      expect(overflowPx, `Expected no 360px horizontal overflow on ${route}`).toBeLessThanOrEqual(2);
+    }
+  });
 });

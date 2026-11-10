@@ -2,6 +2,23 @@ import { test, expect } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 
+function loadTestEnv(): Record<string, string> {
+  const envPath = path.resolve('.env.test');
+  const result: Record<string, string> = {};
+  if (!fs.existsSync(envPath)) return result;
+  const raw = fs.readFileSync(envPath, 'utf8');
+  for (const line of raw.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx <= 0) continue;
+    result[trimmed.slice(0, eqIdx).trim()] = trimmed.slice(eqIdx + 1).trim();
+  }
+  return result;
+}
+
+const e2eEnv = loadTestEnv();
+
 test.describe('Group Car Buying Platform E2E Suite', () => {
   const screenshotsDir = path.resolve('docs/screenshots');
 
@@ -397,5 +414,58 @@ test.describe('Group Car Buying Platform E2E Suite', () => {
     await page.click('button:has-text("Save New Password")');
 
     await expect(page.locator('text=Password Reset Complete')).toBeVisible({ timeout: 10000 });
+  });
+
+  test('15. Footer governance policy modals open/close and HomePage fuel filter & reset work', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/');
+    await expect(page.locator('text=Loading live car models...')).toHaveCount(0, { timeout: 15000 });
+
+    // Open and close a footer Governance policy modal
+    const footer = page.locator('footer');
+    await footer.scrollIntoViewIfNeeded();
+    await footer.getByRole('button', { name: 'Price Lock Guarantee Terms' }).click();
+    await expect(page.getByText('immutable price snapshot')).toBeVisible({ timeout: 5000 });
+    await page.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(page.getByText('immutable price snapshot')).toHaveCount(0);
+
+    // Filter by Fuel Type = Electric and reset filters
+    await page.locator('#cars').scrollIntoViewIfNeeded();
+    const fuelSelect = page.locator('select').nth(2);
+    await fuelSelect.selectOption('Electric');
+    await expect(page.getByRole('button', { name: 'Reset Filters' })).toBeVisible();
+    await page.getByRole('button', { name: 'Reset Filters' }).click();
+    await expect(fuelSelect).toHaveValue('All');
+    await expect(page.locator('text=Tata Nexon').first()).toBeVisible();
+  });
+
+  test('16. Authenticated dealer portal navigates /dealer/quotes, /dealer/groups, and /dealer/profile cleanly', async ({ page }) => {
+    test.skip(!e2eEnv.TEST_DEALER_A_EMAIL || !e2eEnv.TEST_DEALER_A_PASSWORD, '.env.test dealer credentials required');
+
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/login');
+    await expect(page.locator('input[type="email"]')).toBeVisible({ timeout: 15000 });
+    await page.fill('input[type="email"]', e2eEnv.TEST_DEALER_A_EMAIL);
+    await page.fill('input[type="password"]', e2eEnv.TEST_DEALER_A_PASSWORD);
+    await page.click('button[type="submit"]');
+    await expect(page).toHaveURL(/\/dealer\//, { timeout: 15000 });
+
+    // Dedicated /dealer/quotes route
+    await page.goto('/dealer/quotes');
+    await expect(page.locator('h1')).toContainText('My Submitted Quotations', { timeout: 15000 });
+    await expect(page.getByText('Total Quotes')).toBeVisible();
+
+    // Eligible groups & showroom profile
+    await page.goto('/dealer/groups');
+    await expect(page.locator('.animate-spin')).toHaveCount(0, { timeout: 15000 });
+    await page.goto('/dealer/profile');
+    await expect(page.locator('h1')).toBeVisible({ timeout: 15000 });
+
+    // Verify 360px mobile viewport navigation has no horizontal overflow
+    await page.setViewportSize({ width: 360, height: 740 });
+    await page.goto('/dealer/quotes');
+    await expect(page.locator('h1')).toContainText('My Submitted Quotations', { timeout: 15000 });
+    const hasOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth + 2);
+    expect(hasOverflow).toBe(false);
   });
 });

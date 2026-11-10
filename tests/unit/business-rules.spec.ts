@@ -1,13 +1,16 @@
 import { test, expect } from '@playwright/test';
 import { formatINR } from '../../src/lib/formatters';
 import { calculateBuyerRefund, calculateDealerFaultRefund } from '../../src/lib/bookingService';
-import { isQuoteComplete, rankQuotes, analyzeQuotations } from '../../src/lib/quoteService';
+import { isQuoteComplete, isQuoteExpired, rankQuotes, analyzeQuotations } from '../../src/lib/quoteService';
+import { createPayment, verifyPayment } from '../../src/lib/paymentService';
 import {
   isAdminRole,
   isSuperAdminRole,
   validateAdminPassword,
   validatePlatformSetting,
   detectQuoteOutliers,
+  sanitizePostgrestSearch,
+  toLocalDateKey,
   buildCsvContent,
   sha256Hex,
   generateInviteToken,
@@ -258,5 +261,95 @@ test.describe('Unit Tests: Core Business Rules', () => {
     expect(safeCodeEquals('482913', '482913')).toBe(true);
     expect(safeCodeEquals('482913', '482914')).toBe(false);
     expect(safeCodeEquals('482913', '48291')).toBe(false);
+  });
+
+  // Test 12: Quote Filtering Excludes Inactive, Expired & Malformed Dates
+  test('12. rankQuotes and isQuoteExpired filter inactive, expired, and malformed validity dates', () => {
+    const futureDate = new Date(Date.now() + 7 * 86400 * 1000).toISOString();
+    const pastDate = new Date(Date.now() - 86400 * 1000).toISOString();
+
+    expect(isQuoteExpired('')).toBe(true);
+    expect(isQuoteExpired('not-a-valid-date')).toBe(true);
+    expect(isQuoteExpired(pastDate)).toBe(true);
+    expect(isQuoteExpired(futureDate)).toBe(false);
+
+    const ranked = rankQuotes([
+      {
+        id: 'q-deactivated-cheapest',
+        on_road_price: 900000,
+        is_complete: true,
+        is_active: false,
+        validity_date: futureDate,
+      },
+      {
+        id: 'q-expired-cheap',
+        on_road_price: 950000,
+        is_complete: true,
+        is_active: true,
+        validity_date: pastDate,
+      },
+      {
+        id: 'q-valid-active',
+        on_road_price: 1100000,
+        is_complete: true,
+        is_active: true,
+        validity_date: futureDate,
+      },
+    ]);
+
+    expect(ranked.rankedCompleteQuotes.map((q) => q.id)).toEqual(['q-valid-active']);
+    expect(ranked.lowestCompleteQuote?.id).toBe('q-valid-active');
+  });
+
+  // Test 13: Outlier Detection Ignores Inactive/Expired Quotes
+  test('13. detectQuoteOutliers ignores inactive and expired quotes when calculating group median', () => {
+    const futureDate = new Date(Date.now() + 7 * 86400 * 1000).toISOString();
+    const pastDate = new Date(Date.now() - 86400 * 1000).toISOString();
+
+    const outliers = detectQuoteOutliers(
+      [
+        { id: 'q1', group_id: 'g1', on_road_price: 1000000, is_complete: true, is_active: true, validity_date: futureDate },
+        { id: 'q2', group_id: 'g1', on_road_price: 1020000, is_complete: true, is_active: true, validity_date: futureDate },
+        { id: 'q3', group_id: 'g1', on_road_price: 1010000, is_complete: true, is_active: true, validity_date: futureDate },
+        { id: 'q-dead', group_id: 'g1', on_road_price: 5000000, is_complete: true, is_active: false, validity_date: futureDate },
+        { id: 'q-exp', group_id: 'g1', on_road_price: 5000000, is_complete: true, is_active: true, validity_date: pastDate },
+      ],
+      15
+    );
+
+    expect(outliers.get('q-dead')?.isOutlier).toBe(false);
+    expect(outliers.get('q-exp')?.isOutlier).toBe(false);
+    expect(outliers.get('q1')?.isOutlier).toBe(false);
+    expect(outliers.get('q2')?.isOutlier).toBe(false);
+  });
+
+  // Test 14: PostgREST .or() Search Sanitization & Integer Settings Validation
+  test('14. sanitizePostgrestSearch strips filter injection delimiters and integer settings reject decimals', () => {
+    expect(sanitizePostgrestSearch('Tata, Nexon (EV)*\\')).toBe('Tata Nexon EV');
+    expect(sanitizePostgrestSearch('  Hyundai   Creta  ')).toBe('Hyundai Creta');
+
+    expect(validatePlatformSetting('visibility_member_threshold', '3.5', {}).valid).toBe(false);
+    expect(validatePlatformSetting('default_group_target', '10.2', {}).valid).toBe(false);
+    expect(validatePlatformSetting('dealer_delivery_fallback_days', '14', {}).valid).toBe(true);
+
+    const localKey = toLocalDateKey(new Date(2026, 4, 9, 0, 15, 0));
+    expect(localKey).toBe('2026-05-09');
+  });
+
+  // Test 15: Simulated Payment Intent Tracking Preserves Booking ID, Amount & Method
+  test('15. paymentService preserves intent bookingId, amount, and chosen payment method on verification', async () => {
+    const intent = await createPayment({
+      bookingId: 'bk-test-123',
+      amount: 5100,
+      method: 'CARD',
+    });
+    expect(intent.status).toBe('PENDING');
+    expect(intent.method).toBe('CARD');
+
+    const verified = await verifyPayment(intent.paymentId, 'SUCCESS');
+    expect(verified.status).toBe('SUCCESS');
+    expect(verified.bookingId).toBe('bk-test-123');
+    expect(verified.amount).toBe(5100);
+    expect(verified.method).toBe('CARD');
   });
 });

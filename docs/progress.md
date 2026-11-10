@@ -204,3 +204,8 @@
 - [x] **Admin Task 6**: Admin Invites, Accept Invite & Admin Account Pages (`add admin invites and account page`)
 - [x] **Admin Task 7**: Settings, Notifications, Audit Log, Exports & Group Expiry (`settings, notifications, audit log, exports and group expiry`)
 - [x] **Admin Task 8**: Remote Migrations, First Admin & Test Setup, Full Test Suite & Docs (`tests, test report and documentation`)
+- [x] **Post-Deployment Platform Audit & Module Fixes**:
+  - Audited and fixed Buyer, Dealer, Admin, Auth, and Public modules end-to-end (`BuyerDashboardPage`, `FindGroupsPage`, `InterestedPage`, `BookingPaymentPage`, `GroupDetailPage`, `OffersComparisonPage`, `MyBookingsPage`, `WishlistPage`, `NotificationsPage`, `CreateGroupPage`, `ProfilePrivacyPage`, `HomePage`, `CarDetailPage`, `Footer`, `BuyerLayout`)
+  - Added dedicated `/dealer/quotes` (`DealerQuotationsPage`) and fixed `SubmitQuotePage`, `DealerGroupDetailPage`, `DealerGroupsPage`, `DealerDashboardPage`, `DealerBookingsPage`, `DealerLeadsPage`, `DealerRatingsReportsPage`, `DealerNotificationsPage`, `ShowroomProfilePage`, `StaffManagementPage`, `DealerLayout`, `DealerStatusPage`, and `PendingApprovalPage`
+  - Fixed Admin search escaping (`sanitizePostgrestSearch`), `Tabs.tsx` 360px mobile wrapping, timezone-aligned charts/exports, `PENDING` bookings tab filtering, settings cache invalidation, and deletion reject handling
+  - Authored `supabase/migrations/008_platform_integrity_and_fixes.sql` + `seed.sql` variant completions + `-MigrationsOnly` flag in `scripts/run-remote-setup.ps1` + expanded Playwright unit (`15`) and E2E (`24`) suites
