@@ -26,22 +26,55 @@ export function DealerLayout({ children }: DealerLayoutProps) {
   const location = useLocation();
 
   const isVerified = dealership?.status === 'VERIFIED';
+  const status = dealership?.status || 'PENDING';
 
-  const navItems = [
-    { label: 'Dashboard', path: '/dealer/dashboard', icon: LayoutDashboard },
-    { label: 'Eligible Groups', path: '/dealer/groups', icon: Users },
-    { label: 'My Quotations', path: '/dealer/quotes', icon: Tag },
-    { label: 'Interested Leads', path: '/dealer/leads', icon: PhoneCall },
-    { label: 'Bookings Received', path: '/dealer/bookings', icon: ShoppingBag },
-    { label: 'Showroom Profile', path: '/dealer/profile', icon: Building2 },
-    { label: 'Staff Management', path: '/dealer/staff', icon: UserCheck },
-    { label: 'Customer Ratings', path: '/dealer/ratings', icon: Star },
-    { label: 'Notifications', path: '/dealer/notifications', icon: Bell },
+  const allNavItems = [
+    { label: 'Dashboard', path: '/dealer/dashboard', icon: LayoutDashboard, requiresVerified: true },
+    { label: 'Eligible Groups', path: '/dealer/groups', icon: Users, requiresVerified: true },
+    { label: 'My Quotations', path: '/dealer/quotes', icon: Tag, requiresVerified: true },
+    { label: 'Interested Leads', path: '/dealer/leads', icon: PhoneCall, requiresVerified: true },
+    { label: 'Bookings Received', path: '/dealer/bookings', icon: ShoppingBag, requiresVerified: true },
+    { label: 'Showroom Profile', path: '/dealer/profile', icon: Building2, requiresVerified: false },
+    { label: 'Staff Management', path: '/dealer/staff', icon: UserCheck, requiresVerified: false },
+    { label: 'Customer Ratings', path: '/dealer/ratings', icon: Star, requiresVerified: false },
+    { label: 'Notifications', path: '/dealer/notifications', icon: Bell, requiresVerified: false },
   ];
+
+  const navItems = isVerified
+    ? allNavItems
+    : allNavItems.filter((item) => !item.requiresVerified);
+
+  const isNavItemActive = (itemPath: string) =>
+    location.pathname === itemPath ||
+    (itemPath === '/dealer/groups' && location.pathname.startsWith('/dealer/groups/'));
 
   return (
     <div className="min-h-screen flex flex-col bg-surface-canvas pb-20 md:pb-0">
       <Navbar />
+
+      {/* Mobile secondary navigation pills for routes beyond the 4 bottom tabs */}
+      <div className="md:hidden bg-white border-b border-slate-200/80 px-3 py-2">
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const active = isNavItemActive(item.path);
+            return (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold whitespace-nowrap border transition-colors ${
+                  active
+                    ? 'bg-slate-900 text-white border-slate-900'
+                    : 'bg-slate-50 text-slate-600 border-slate-200'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      </div>
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full flex-1 flex flex-col md:flex-row gap-8">
         {/* Dealership Sidebar */}
@@ -59,9 +92,17 @@ export function DealerLayout({ children }: DealerLayoutProps) {
                 {dealership?.name || 'Showroom Name'}
               </div>
               <div className="mt-1 flex items-center gap-1.5">
-                {isVerified ? (
+                {status === 'VERIFIED' ? (
                   <Badge variant="success" size="sm">
                     <ShieldCheck className="w-3 h-3 text-emerald-600 mr-1" /> Verified Partner
+                  </Badge>
+                ) : status === 'SUSPENDED' ? (
+                  <Badge variant="danger" size="sm">
+                    <ShieldAlert className="w-3 h-3 text-rose-600 mr-1" /> Suspended
+                  </Badge>
+                ) : status === 'REJECTED' ? (
+                  <Badge variant="danger" size="sm">
+                    <ShieldAlert className="w-3 h-3 text-rose-600 mr-1" /> Rejected
                   </Badge>
                 ) : (
                   <Badge variant="warning" size="sm">
@@ -74,7 +115,7 @@ export function DealerLayout({ children }: DealerLayoutProps) {
             <nav className="mt-4 space-y-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
-                const isActive = location.pathname === item.path;
+                const isActive = isNavItemActive(item.path);
                 return (
                   <Link
                     key={item.path}

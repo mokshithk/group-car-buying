@@ -3,8 +3,9 @@ import { useParams, Link } from 'react-router-dom';
 import { BuyerLayout } from '@/components/layout/BuyerLayout';
 import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
-import { fetchQuotationsForGroup } from '@/lib/quoteService';
+import { fetchQuotationById, isQuoteExpired } from '@/lib/quoteService';
 import { fetchGroupById } from '@/lib/groupService';
+import { fetchPlatformSettings, DEFAULT_PLATFORM_SETTINGS } from '@/lib/catalogService';
 import { expressInterest } from '@/lib/bookingService';
 import { formatINR } from '@/lib/formatters';
 import { Group, Quotation } from '@/types';
@@ -14,6 +15,7 @@ import {
   Mail,
   MapPin,
   AlertTriangle,
+  AlertCircle,
   ArrowLeft,
   CheckCircle2,
   Lock,
@@ -25,33 +27,92 @@ export function InterestedPage() {
 
   const [quote, setQuote] = useState<Quotation | null>(null);
   const [group, setGroup] = useState<Group | null>(null);
+  const [lockTotal, setLockTotal] = useState<number>(
+    DEFAULT_PLATFORM_SETTINGS.bookingAmount + DEFAULT_PLATFORM_SETTINGS.platformFee
+  );
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    async function load() {
-      if (!quoteId) return;
-      setIsLoading(true);
+    let cancelled = false;
 
-      const g = await fetchGroupById('f1111111-1111-1111-1111-111111111101');
-      if (g) {
-        setGroup(g);
-        const quotes = await fetchQuotationsForGroup(g.id);
-        const target = quotes.find((q) => q.id === quoteId) || quotes[0];
+    async function load() {
+      if (!quoteId) {
+        setIsLoading(false);
+        return;
+      }
+
+      setIsLoading(true);
+      setErrorMessage(null);
+
+      try {
+        const [target, settings] = await Promise.all([
+          fetchQuotationById(quoteId),
+          fetchPlatformSettings(),
+        ]);
+        if (cancelled) return;
+
+        setLockTotal(settings.bookingAmount + settings.platformFee);
+
+        if (!target) {
+          setErrorMessage('The requested quotation could not be found.');
+          return;
+        }
+
+        const resolvedGroup = target.group || (await fetchGroupById(target.group_id));
+        if (cancelled) return;
+
+        if (!resolvedGroup) {
+          setErrorMessage('The buying group for this quotation could not be found.');
+          return;
+        }
+
+        if (target.is_active === false) {
+          setErrorMessage('This quotation is no longer active.');
+          return;
+        }
+        if (!target.is_complete) {
+          setErrorMessage('Incomplete quotations cannot be used to unlock showroom contact.');
+          return;
+        }
+        if (isQuoteExpired(target.validity_date)) {
+          setErrorMessage('This quotation has expired.');
+          return;
+        }
+
+        setGroup(resolvedGroup);
         setQuote(target);
 
-        if (target && user && profile) {
-          await expressInterest(
+        if (user && profile) {
+          const res = await expressInterest(
             target,
-            g,
+            resolvedGroup,
             user.id,
             profile.full_name,
-            profile.phone || '+91 98765 43210'
+            profile.phone || ''
           );
+          if (cancelled) return;
+          if (!res.success) {
+            setErrorMessage(res.error || 'Could not register your showroom interest.');
+          }
+        } else {
+          setErrorMessage('Please sign in with your buyer account to express showroom interest.');
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setErrorMessage(err instanceof Error ? err.message : 'Unable to load quotation details.');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
         }
       }
-      setIsLoading(false);
     }
+
     load();
+    return () => {
+      cancelled = true;
+    };
   }, [quoteId, user, profile]);
 
   if (isLoading) {
@@ -62,14 +123,30 @@ export function InterestedPage() {
     );
   }
 
-  if (!quote || !group) {
+  if (errorMessage || !quote || !group) {
     return (
       <BuyerLayout>
-        <div className="py-20 text-center space-y-3">
-          <h2 className="text-lg font-bold text-slate-900">Quotation not found</h2>
-          <Link to="/buyer/groups">
-            <Button variant="secondary" size="sm">Back to My Groups</Button>
-          </Link>
+        <div className="py-16 max-w-lg mx-auto">
+          <Card className="p-8 text-center space-y-4">
+            <AlertCircle className="w-10 h-10 text-red-500 mx-auto" />
+            <h2 className="text-lg font-bold text-slate-900">
+              {errorMessage || 'Quotation not found'}
+            </h2>
+            <p className="text-xs text-slate-500">
+              Showroom contact details are only unlocked for active group members on valid, active quotations.
+            </p>
+            <div className="flex justify-center gap-3 pt-2">
+              {group ? (
+                <Link to={`/buyer/groups/${group.id}/offers`}>
+                  <Button variant="secondary" size="sm">Back to Offers</Button>
+                </Link>
+              ) : (
+                <Link to="/buyer/groups">
+                  <Button variant="secondary" size="sm">Back to My Groups</Button>
+                </Link>
+              )}
+            </div>
+          </Card>
         </div>
       </BuyerLayout>
     );
@@ -192,7 +269,7 @@ export function InterestedPage() {
             </div>
 
             <div className="pt-2 text-slate-500 text-[11px] leading-relaxed">
-              ℹ️ Dealership sales executives have been notified of your interest with your registered contact details: <strong>{profile?.full_name} ({profile?.phone})</strong>.
+              Dealership sales executives have been notified of your interest with your registered contact details: <strong>{profile?.full_name}{profile?.phone ? ` (${profile.phone})` : ''}</strong>.
             </div>
           </CardContent>
         </Card>
@@ -201,7 +278,7 @@ export function InterestedPage() {
         <div className="flex flex-col sm:flex-row items-center gap-3">
           <Link to={`/buyer/quote/${quote.id}/book`} className="w-full">
             <Button variant="primary" size="lg" className="w-full font-bold">
-              Lock This Price Now ({formatINR(5100)})
+              Lock This Price Now ({formatINR(lockTotal)})
             </Button>
           </Link>
           <Link to={`/buyer/groups/${group.id}/offers`} className="w-full sm:w-auto">

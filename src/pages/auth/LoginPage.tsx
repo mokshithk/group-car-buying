@@ -19,52 +19,57 @@ export function LoginPage() {
     setError('');
     setIsLoading(true);
 
-    const res = await login(email, password);
-    setIsLoading(false);
+    try {
+      const res = await login(email.trim(), password);
 
-    if (res.success) {
-      if (res.role === 'admin' || res.role === 'super_admin') {
-        if (res.mustChangePassword) {
-          navigate('/admin/set-password', { replace: true });
-        } else if (redirectUrl && redirectUrl.startsWith('/admin')) {
-          navigate(redirectUrl, { replace: true });
-        } else {
-          navigate('/admin/dashboard', { replace: true });
-        }
-      } else if (res.role === 'dealer') {
-        const dStatus = res.dealershipStatus;
-        if (dStatus === 'REJECTED' || dStatus === 'SUSPENDED') {
-          navigate('/dealer/status', { replace: true });
-        } else if (dStatus === 'PENDING') {
-          navigate('/dealer/pending', { replace: true });
-        } else {
-          // VERIFIED dealer
-          if (
-            redirectUrl &&
-            redirectUrl.startsWith('/dealer') &&
-            !redirectUrl.includes('pending') &&
-            !redirectUrl.includes('status')
-          ) {
+      if (res.success) {
+        if (res.role === 'admin' || res.role === 'super_admin') {
+          if (res.mustChangePassword) {
+            navigate('/admin/set-password', { replace: true });
+          } else if (redirectUrl && redirectUrl.startsWith('/admin')) {
             navigate(redirectUrl, { replace: true });
           } else {
-            navigate('/dealer/dashboard', { replace: true });
+            navigate('/admin/dashboard', { replace: true });
           }
-        }
-      } else if (res.role === 'buyer') {
-        if (redirectUrl && redirectUrl.startsWith('/buyer')) {
-          navigate(redirectUrl, { replace: true });
+        } else if (res.role === 'dealer') {
+          const dStatus = res.dealershipStatus;
+          if (dStatus === 'REJECTED' || dStatus === 'SUSPENDED') {
+            navigate('/dealer/status', { replace: true });
+          } else if (dStatus === 'PENDING') {
+            navigate('/dealer/pending', { replace: true });
+          } else {
+            // VERIFIED dealer
+            if (
+              redirectUrl &&
+              redirectUrl.startsWith('/dealer') &&
+              !redirectUrl.includes('pending') &&
+              !redirectUrl.includes('status')
+            ) {
+              navigate(redirectUrl, { replace: true });
+            } else {
+              navigate('/dealer/dashboard', { replace: true });
+            }
+          }
+        } else if (res.role === 'buyer') {
+          if (redirectUrl && redirectUrl.startsWith('/buyer')) {
+            navigate(redirectUrl, { replace: true });
+          } else {
+            navigate('/buyer/dashboard', { replace: true });
+          }
         } else {
-          navigate('/buyer/dashboard', { replace: true });
+          navigate('/', { replace: true });
         }
       } else {
-        navigate('/', { replace: true });
+        if (res.isUnconfirmedEmail) {
+          navigate(`/register/verify-otp?email=${encodeURIComponent(email.trim())}&type=signup`, { replace: true });
+          return;
+        }
+        setError(res.error || 'Invalid credentials');
       }
-    } else {
-      if (res.isUnconfirmedEmail) {
-        navigate(`/register/verify-otp?email=${encodeURIComponent(email)}&type=signup`, { replace: true });
-        return;
-      }
-      setError(res.error || 'Invalid credentials');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to sign in right now.');
+    } finally {
+      setIsLoading(false);
     }
   };
 

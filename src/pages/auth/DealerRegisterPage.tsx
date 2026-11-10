@@ -3,11 +3,11 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { Button, Input, Select, Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui';
 import { OtpVerification } from '@/components/auth/OtpVerification';
-import { fetchDistricts } from '@/lib/catalogService';
+import { fetchDistricts, fetchManufacturers } from '@/lib/catalogService';
 import { District } from '@/types';
 import { Building2, Lock, Mail, User, Phone, FileText, CheckSquare, ArrowRight, ShieldAlert } from 'lucide-react';
 
-const AVAILABLE_BRANDS = [
+const FALLBACK_BRANDS = [
   'Tata Motors',
   'Hyundai',
   'Mahindra',
@@ -20,8 +20,11 @@ const AVAILABLE_BRANDS = [
   'MG',
 ];
 
+const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
+
 export function DealerRegisterPage() {
   const [districts, setDistricts] = useState<District[]>([]);
+  const [availableBrands, setAvailableBrands] = useState<string[]>(FALLBACK_BRANDS);
   const [dealershipName, setDealershipName] = useState('');
   const [ownerName, setOwnerName] = useState('');
   const [email, setEmail] = useState('');
@@ -29,7 +32,7 @@ export function DealerRegisterPage() {
   const [districtId, setDistrictId] = useState('');
   const [address, setAddress] = useState('');
   const [gstNumber, setGstNumber] = useState('');
-  const [selectedBrands, setSelectedBrands] = useState<string[]>(['Tata Motors']);
+  const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [alreadyRegistered, setAlreadyRegistered] = useState(false);
@@ -40,13 +43,23 @@ export function DealerRegisterPage() {
   const [challengeToken, setChallengeToken] = useState('');
 
   useEffect(() => {
-    fetchDistricts().then((dList) => {
-      setDistricts(dList);
-      if (dList.length > 0 && !districtId) {
-        setDistrictId(dList[0].id);
-      }
-    }).catch(console.error);
-  }, [districtId]);
+    Promise.all([fetchDistricts(), fetchManufacturers()])
+      .then(([dList, mList]) => {
+        setDistricts(dList);
+        if (dList.length > 0) {
+          setDistrictId((prev) => prev || dList[0].id);
+        }
+        if (mList.length > 0) {
+          const names = mList.map((m) => m.name);
+          setAvailableBrands(names);
+          const defaultBrand = names.includes('Tata Motors') ? 'Tata Motors' : names[0];
+          setSelectedBrands((prev) => (prev.length > 0 ? prev : [defaultBrand]));
+        } else {
+          setSelectedBrands((prev) => (prev.length > 0 ? prev : [FALLBACK_BRANDS[0]]));
+        }
+      })
+      .catch(console.error);
+  }, []);
 
   const { requestSignupOtp, registerDealer, refreshProfile } = useAuth();
   const navigate = useNavigate();
@@ -64,6 +77,15 @@ export function DealerRegisterPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setAlreadyRegistered(false);
+    const normalizedGst = gstNumber.trim().toUpperCase();
+    if (!GSTIN_REGEX.test(normalizedGst)) {
+      setError('Please enter a valid 15-character Indian GSTIN (e.g. 29AAAAA0000A1Z5).');
+      return;
+    }
+    if (!/^[+\d\s-]{10,16}$/.test(phone.trim())) {
+      setError('Please enter a valid 10-digit showroom contact number.');
+      return;
+    }
     if (selectedBrands.length === 0) {
       setError('Please select at least one authorized OEM brand.');
       return;
@@ -75,18 +97,21 @@ export function DealerRegisterPage() {
 
     setError('');
     setIsLoading(true);
-
-    const otpRes = await requestSignupOtp(email, ownerName);
-    setIsLoading(false);
-
-    if (otpRes.success) {
-      setDevOtp(otpRes.devOtp || '');
-      setSmtpError(otpRes.smtpError || '');
-      setChallengeToken(otpRes.challengeToken || '');
-      setShowOtp(true);
-    } else {
-      setAlreadyRegistered(Boolean(otpRes.alreadyRegistered));
-      setError(otpRes.error || 'Unable to start verification.');
+    try {
+      const otpRes = await requestSignupOtp(email.trim(), ownerName.trim());
+      if (otpRes.success) {
+        setDevOtp(otpRes.devOtp || '');
+        setSmtpError(otpRes.smtpError || '');
+        setChallengeToken(otpRes.challengeToken || '');
+        setShowOtp(true);
+      } else {
+        setAlreadyRegistered(Boolean(otpRes.alreadyRegistered));
+        setError(otpRes.error || 'Unable to start verification.');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to start verification.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -115,18 +140,22 @@ export function DealerRegisterPage() {
             enableSupabaseLinkAutoDetect={false}
             onSuccess={async () => {
               const res = await registerDealer({
-                dealershipName,
-                ownerName,
-                email,
-                phone,
+                dealershipName: dealershipName.trim(),
+                ownerName: ownerName.trim(),
+                email: email.trim(),
+                phone: phone.trim(),
                 districtId,
-                address,
-                gstNumber,
+                address: address.trim(),
+                gstNumber: gstNumber.trim().toUpperCase(),
                 brands: selectedBrands,
                 password,
               });
               if (!res.success) {
                 throw new Error(res.error || 'Dealership registration failed after OTP verification.');
+              }
+              if (res.requiresEmailConfirmation) {
+                navigate(`/register/verify-otp?email=${encodeURIComponent(email.trim())}&type=signup`, { replace: true });
+                return;
               }
               await refreshProfile();
               navigate('/dealer/pending-approval', { replace: true });
@@ -263,7 +292,7 @@ export function DealerRegisterPage() {
                   Authorized OEM Brands (Select all that apply)
                 </label>
                 <div className="flex flex-wrap gap-2 pt-1">
-                  {AVAILABLE_BRANDS.map((brand) => {
+                  {availableBrands.map((brand) => {
                     const isSelected = selectedBrands.includes(brand);
                     return (
                       <button

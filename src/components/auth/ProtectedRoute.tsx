@@ -95,14 +95,14 @@ export function ProtectedRoute({
     return <Navigate to="/admin/set-password" replace />;
   }
 
-  // 5. Dealer status checks
+  // 5. Dealer status checks (fail closed when dealership lookup is null/pending)
   if (profile.role === 'dealer') {
     const dStatus = dealership?.status;
     if (dStatus === 'REJECTED' || dStatus === 'SUSPENDED') {
       if (location.pathname !== '/dealer/status') {
         return <Navigate to="/dealer/status" replace />;
       }
-    } else if (dStatus === 'PENDING' && requireVerifiedDealer) {
+    } else if (requireVerifiedDealer && dStatus !== 'VERIFIED') {
       if (location.pathname !== '/dealer/pending' && location.pathname !== '/dealer/pending-approval') {
         return <Navigate to="/dealer/pending" replace />;
       }

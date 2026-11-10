@@ -1,55 +1,89 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { BuyerLayout } from '@/components/layout/BuyerLayout';
 import { Button, Badge, Card } from '@/components/ui';
+import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/Toast';
+import { supabase } from '@/lib/supabase';
+import { formatDateTime } from '@/lib/formatters';
 import { Notification } from '@/types';
-import { Bell, CheckCheck, Trash2, Tag, Users, ShieldAlert } from 'lucide-react';
+import { Bell, CheckCheck, Trash2, Tag, Users, ShieldAlert, AlertCircle } from 'lucide-react';
 
 export function NotificationsPage() {
+  const { user } = useAuth();
   const { toast } = useToast();
 
-  const [notifications, setNotifications] = useState<Notification[]>([
-    {
-      id: 'd0111111-1111-1111-1111-111111111101',
-      user_id: '11111111-1111-1111-1111-111111111101',
-      title: 'Quotation Price Revised',
-      message: 'Southern Star Auto reduced on-road price for Tata Nexon Creative Plus DCA to ₹14,08,000.',
-      type: 'PRICE_CHANGE',
-      read: false,
-      link_url: '/buyer/groups/f1111111-1111-1111-1111-111111111101/offers',
-      created_at: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: 'd0111111-1111-1111-1111-111111111102',
-      user_id: '11111111-1111-1111-1111-111111111101',
-      title: 'New Member Joined Your Group',
-      message: 'Ananya V. joined Hyundai Creta SX(O) Turbo DCT in Bengaluru Urban.',
-      type: 'GENERAL',
-      read: false,
-      link_url: '/buyer/groups/f1111111-1111-1111-1111-111111111102',
-      created_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      id: 'd0111111-1111-1111-1111-111111111103',
-      user_id: '11111111-1111-1111-1111-111111111101',
-      title: 'Dealer Visibility Threshold Achieved',
-      message: 'Your group reached 3 members! Authorized district showrooms are now submitting quotations.',
-      type: 'NEW_ELIGIBLE_GROUP',
-      read: true,
-      link_url: '/buyer/groups/f1111111-1111-1111-1111-111111111101',
-      created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-  ]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const handleMarkAllRead = () => {
+  const loadNotifications = useCallback(async () => {
+    if (!user) {
+      setIsLoading(false);
+      return;
+    }
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+      setNotifications((data || []) as Notification[]);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Unable to load notifications.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    loadNotifications();
+  }, [loadNotifications]);
+
+  const handleMarkOneRead = async (notifId: string) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === notifId ? { ...n, read: true } : n))
+    );
+    await supabase.from('notifications').update({ read: true }).eq('id', notifId);
+  };
+
+  const handleMarkAllRead = async () => {
+    if (!user) return;
+    const { error } = await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('user_id', user.id)
+      .eq('read', false);
+
+    if (error) {
+      toast({ type: 'error', title: 'Could not update notifications', message: error.message });
+      return;
+    }
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
     toast({ type: 'info', title: 'All marked as read' });
   };
 
-  const handleClearAll = () => {
+  const handleClearAll = async () => {
+    if (!user) return;
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('user_id', user.id);
+
+    if (error) {
+      toast({ type: 'error', title: 'Could not clear notifications', message: error.message });
+      return;
+    }
     setNotifications([]);
     toast({ type: 'info', title: 'Notifications cleared' });
   };
+
+  const hasUnread = notifications.some((n) => !n.read);
 
   return (
     <BuyerLayout>
@@ -69,14 +103,16 @@ export function NotificationsPage() {
 
           {notifications.length > 0 && (
             <div className="flex items-center gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={handleMarkAllRead}
-                leftIcon={<CheckCheck className="w-4 h-4" />}
-              >
-                Mark all read
-              </Button>
+              {hasUnread && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleMarkAllRead}
+                  leftIcon={<CheckCheck className="w-4 h-4" />}
+                >
+                  Mark all read
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="sm"
@@ -90,7 +126,16 @@ export function NotificationsPage() {
           )}
         </div>
 
-        {notifications.length === 0 ? (
+        {loadError && (
+          <div className="p-4 rounded-xl bg-red-50 border border-red-200 flex items-center gap-2.5 text-xs text-red-800">
+            <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+            <span>{loadError}</span>
+          </div>
+        )}
+
+        {isLoading ? (
+          <div className="py-16 text-center text-slate-400">Loading notifications...</div>
+        ) : notifications.length === 0 ? (
           <Card className="text-center py-16 p-8">
             <Bell className="w-12 h-12 text-slate-300 mx-auto mb-3" />
             <h3 className="text-base font-bold text-slate-800">You're all caught up!</h3>
@@ -104,7 +149,7 @@ export function NotificationsPage() {
               const icon =
                 notif.type === 'PRICE_CHANGE' ? (
                   <Tag className="w-4 h-4 text-emerald-600" />
-                ) : notif.type === 'NEW_ELIGIBLE_GROUP' ? (
+                ) : notif.type === 'NEW_ELIGIBLE_GROUP' || notif.type === 'NEW_GROUP' ? (
                   <Users className="w-4 h-4 text-brand-600" />
                 ) : (
                   <ShieldAlert className="w-4 h-4 text-indigo-600" />
@@ -125,17 +170,43 @@ export function NotificationsPage() {
                     <div className="flex-1 min-w-0 text-xs">
                       <div className="flex items-center justify-between gap-2">
                         <h4 className="font-bold text-slate-900">{notif.title}</h4>
-                        {!notif.read && <Badge variant="brand" size="sm">New</Badge>}
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[10px] text-slate-400">
+                            {formatDateTime(notif.created_at)}
+                          </span>
+                          {!notif.read && <Badge variant="brand" size="sm">New</Badge>}
+                        </div>
                       </div>
                       <p className="text-slate-600 mt-0.5 leading-relaxed">{notif.message}</p>
-                      {notif.link_url && (
-                        <a
-                          href={notif.link_url}
-                          className="inline-block mt-2 font-semibold text-brand-600 hover:underline"
-                        >
-                          View Details →
-                        </a>
-                      )}
+                      <div className="flex items-center gap-3 mt-2">
+                        {notif.link_url &&
+                          (notif.link_url.startsWith('http') ? (
+                            <a
+                              href={notif.link_url}
+                              onClick={() => handleMarkOneRead(notif.id)}
+                              className="font-semibold text-brand-600 hover:underline"
+                            >
+                              View Details →
+                            </a>
+                          ) : (
+                            <Link
+                              to={notif.link_url}
+                              onClick={() => handleMarkOneRead(notif.id)}
+                              className="font-semibold text-brand-600 hover:underline"
+                            >
+                              View Details →
+                            </Link>
+                          ))}
+                        {!notif.read && (
+                          <button
+                            type="button"
+                            onClick={() => handleMarkOneRead(notif.id)}
+                            className="text-slate-400 hover:text-slate-700 font-medium"
+                          >
+                            Mark read
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </Card>

@@ -154,13 +154,17 @@ export function BookingConfirmationPage() {
             </div>
 
             <div className="flex justify-between pt-1">
-              <span className="text-slate-500">Deposit Paid Today:</span>
+              <span className="text-slate-500">Booking Deposit Paid Today:</span>
               <span className="font-bold text-emerald-700">{formatINR(booking.booking_amount)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-500">Platform Facilitation Fee Paid:</span>
+              <span className="font-semibold text-slate-700">{formatINR(booking.platform_fee)}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-500">Remaining Balance at Delivery:</span>
               <span className="font-bold text-slate-900">
-                {formatINR(snap.on_road_price - booking.booking_amount)}
+                {formatINR(Math.max(0, (snap?.on_road_price || 0) - booking.booking_amount))}
               </span>
             </div>
 

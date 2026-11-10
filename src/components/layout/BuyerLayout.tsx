@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import { fetchDistricts } from '@/lib/catalogService';
 import { Navbar } from './Navbar';
 import {
   LayoutDashboard,
@@ -20,6 +21,49 @@ interface BuyerLayoutProps {
 export function BuyerLayout({ children }: BuyerLayoutProps) {
   const { profile } = useAuth();
   const location = useLocation();
+  const [districtLabel, setDistrictLabel] = useState<string>('General');
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!profile?.district_id) {
+      setDistrictLabel('Not Set');
+      return;
+    }
+    fetchDistricts()
+      .then((list) => {
+        if (cancelled) return;
+        const found = list.find((d) => d.id === profile.district_id);
+        setDistrictLabel(found ? found.name : 'Registered');
+      })
+      .catch(() => {
+        if (!cancelled) setDistrictLabel('Registered');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [profile?.district_id]);
+
+  const isPathActive = (path: string) => {
+    if (path === '/buyer/groups/find') {
+      return location.pathname === '/buyer/groups/find' || location.pathname === '/buyer/groups/create';
+    }
+    if (path === '/buyer/groups') {
+      return (
+        location.pathname === '/buyer/groups' ||
+        (location.pathname.startsWith('/buyer/groups/') &&
+          location.pathname !== '/buyer/groups/find' &&
+          location.pathname !== '/buyer/groups/create')
+      );
+    }
+    if (path === '/buyer/bookings') {
+      return (
+        location.pathname === '/buyer/bookings' ||
+        location.pathname.startsWith('/buyer/booking-confirmation/') ||
+        location.pathname.startsWith('/buyer/quote/')
+      );
+    }
+    return location.pathname === path;
+  };
 
   const navItems = [
     { label: 'Dashboard', path: '/buyer/dashboard', icon: LayoutDashboard },
@@ -57,7 +101,7 @@ export function BuyerLayout({ children }: BuyerLayoutProps) {
                   {profile?.full_name || 'Buyer'}
                 </div>
                 <div className="text-xs text-slate-500 truncate">
-                  District: {profile?.district_id ? 'Registered' : 'General'}
+                  District: {districtLabel}
                 </div>
               </div>
             </div>
@@ -65,7 +109,7 @@ export function BuyerLayout({ children }: BuyerLayoutProps) {
             <nav className="mt-4 space-y-1">
               {navItems.map((item) => {
                 const Icon = item.icon;
-                const isActive = location.pathname === item.path;
+                const isActive = isPathActive(item.path);
                 return (
                   <Link
                     key={item.path}
@@ -86,7 +130,32 @@ export function BuyerLayout({ children }: BuyerLayoutProps) {
         </aside>
 
         {/* Main Content Area */}
-        <main className="flex-1 min-w-0">{children}</main>
+        <main className="flex-1 min-w-0 space-y-4">
+          {/* Mobile Secondary Quick Nav Strip (Preferences, Notifications, Profile, Wishlist) */}
+          <div className="md:hidden -mx-1 px-1 flex items-center gap-2 overflow-x-auto pb-1">
+            {navItems
+              .filter((i) => !mobileTabItems.some((m) => m.path === i.path))
+              .map((item) => {
+                const Icon = item.icon;
+                const isActive = isPathActive(item.path);
+                return (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap border transition-colors ${
+                      isActive
+                        ? 'bg-brand-600 text-white border-brand-600'
+                        : 'bg-white text-slate-600 border-slate-200 hover:text-slate-900'
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              })}
+          </div>
+          {children}
+        </main>
       </div>
 
       {/* Mobile Bottom Tab Navigation */}
@@ -96,7 +165,7 @@ export function BuyerLayout({ children }: BuyerLayoutProps) {
       >
         {mobileTabItems.map((tab) => {
           const Icon = tab.icon;
-          const isActive = location.pathname === tab.path;
+          const isActive = isPathActive(tab.path);
           return (
             <Link
               key={tab.path}

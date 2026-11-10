@@ -5,7 +5,12 @@ import { Button, Select, Card, CardHeader, CardTitle, CardDescription, CardConte
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/Toast';
 import { createGroup } from '@/lib/groupService';
-import { fetchModels, fetchDistricts } from '@/lib/catalogService';
+import {
+  fetchModels,
+  fetchDistricts,
+  fetchPlatformSettings,
+  DEFAULT_PLATFORM_SETTINGS,
+} from '@/lib/catalogService';
 import { Model, Variant, District } from '@/types';
 import { formatINR } from '@/lib/formatters';
 import { Users, PlusCircle, ArrowLeft, Sparkles, CheckCircle2, Loader2 } from 'lucide-react';
@@ -21,23 +26,51 @@ export function CreateGroupPage() {
   const [selectedModelId, setSelectedModelId] = useState('');
   const [selectedVariantId, setSelectedVariantId] = useState('');
   const [districtId, setDistrictId] = useState('');
+  const [visibilityThreshold, setVisibilityThreshold] = useState(
+    DEFAULT_PLATFORM_SETTINGS.visibilityMemberThreshold
+  );
+  const [visibilityDays, setVisibilityDays] = useState(
+    DEFAULT_PLATFORM_SETTINGS.groupVisibilityDaysFor2Members
+  );
+  const [targetMembers, setTargetMembers] = useState(
+    DEFAULT_PLATFORM_SETTINGS.defaultGroupTarget
+  );
   const [isInitializing, setIsInitializing] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
-    Promise.all([fetchModels(), fetchDistricts()])
-      .then(([mList, dList]) => {
-        setModels(mList);
-        setDistricts(dList);
+    let cancelled = false;
 
+    Promise.all([fetchModels(), fetchDistricts(), fetchPlatformSettings()])
+      .then(([mList, dList, settings]) => {
+        if (cancelled) return;
+        const activeModels = mList.filter((m) => m.variants && m.variants.length > 0);
+        setModels(activeModels);
+        setDistricts(dList);
+        setVisibilityThreshold(settings.visibilityMemberThreshold);
+        setVisibilityDays(settings.groupVisibilityDaysFor2Members);
+        setTargetMembers(settings.defaultGroupTarget);
+
+        const paramVariantId = searchParams.get('variantId');
         const paramModelId = searchParams.get('modelId');
-        const defaultModel = (paramModelId && mList.find((m) => m.id === paramModelId)) || mList[0];
-        const defaultDistrictId = profile?.district_id || searchParams.get('districtId') || dList[0]?.id || '';
+        const matchedModelFromVariant = paramVariantId
+          ? activeModels.find((m) => m.variants.some((v) => v.id === paramVariantId))
+          : undefined;
+
+        const defaultModel =
+          matchedModelFromVariant ||
+          (paramModelId && activeModels.find((m) => m.id === paramModelId)) ||
+          activeModels[0];
+
+        const defaultDistrictId =
+          profile?.district_id || searchParams.get('districtId') || dList[0]?.id || '';
 
         if (defaultModel) {
           setSelectedModelId(defaultModel.id);
-          if (defaultModel.variants?.length > 0) {
+          if (paramVariantId && defaultModel.variants.some((v) => v.id === paramVariantId)) {
+            setSelectedVariantId(paramVariantId);
+          } else if (defaultModel.variants.length > 0) {
             setSelectedVariantId(defaultModel.variants[0].id);
           }
         }
@@ -45,9 +78,15 @@ export function CreateGroupPage() {
         setIsInitializing(false);
       })
       .catch((err) => {
-        setError(err.message || 'Failed to load catalog data.');
-        setIsInitializing(false);
+        if (!cancelled) {
+          setError(err.message || 'Failed to load catalog data.');
+          setIsInitializing(false);
+        }
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, [searchParams, profile?.district_id]);
 
   const selectedModel = models.find((m) => m.id === selectedModelId) || models[0];
@@ -55,13 +94,17 @@ export function CreateGroupPage() {
     selectedModel?.variants?.find((v) => v.id === selectedVariantId) || selectedModel?.variants?.[0];
   const selectedDistrict =
     districts.find((d) => d.id === districtId) || districts[0] || { id: '', name: 'Selected District', state: '' };
+  const isLockedToProfileDistrict = Boolean(profile?.district_id);
 
-  // Update selected variant when model changes
+  // Sync default variant only when changing models and current variant isn't in new model
   useEffect(() => {
     if (selectedModel && selectedModel.variants?.length > 0) {
-      setSelectedVariantId(selectedModel.variants[0].id);
+      const stillValid = selectedModel.variants.some((v) => v.id === selectedVariantId);
+      if (!stillValid) {
+        setSelectedVariantId(selectedModel.variants[0].id);
+      }
     }
-  }, [selectedModel]);
+  }, [selectedModel, selectedVariantId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,23 +112,28 @@ export function CreateGroupPage() {
     setError('');
     setIsLoading(true);
 
-    const res = await createGroup(
-      selectedVariant.id,
-      districtId,
-      user.id,
-      profile.full_name
-    );
-    setIsLoading(false);
+    try {
+      const res = await createGroup(
+        selectedVariant.id,
+        districtId,
+        user.id,
+        profile.full_name
+      );
 
-    if (res.success && res.groupId) {
-      toast({
-        type: 'success',
-        title: 'Group Created Successfully',
-        message: 'Your district buying group is active. Share the invite link to reach 3 members and unlock dealer quotes!',
-      });
-      navigate(`/buyer/groups/${res.groupId}`);
-    } else {
-      setError(res.error || 'Failed to create group');
+      if (res.success && res.groupId) {
+        toast({
+          type: 'success',
+          title: 'Group Created Successfully',
+          message: `Your district buying group is active. Share the invite link to reach ${visibilityThreshold} members and unlock dealer quotes!`,
+        });
+        navigate(`/buyer/groups/${res.groupId}`);
+      } else {
+        setError(res.error || 'Failed to create group');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create group.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -134,16 +182,26 @@ export function CreateGroupPage() {
                 Buying groups are geographically bound so local authorized showrooms can fulfill deliveries.
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-2">
               <Select
                 value={districtId}
                 onChange={(e) => setDistrictId(e.target.value)}
+                disabled={isLockedToProfileDistrict}
                 options={districts.map((d) => ({
                   value: d.id,
                   label: `${d.name} (${d.state})`,
                 }))}
                 required
               />
+              {isLockedToProfileDistrict && (
+                <p className="text-[11px] text-slate-500">
+                  Bound to your registered district. You can change your registered district in{' '}
+                  <Link to="/buyer/profile" className="text-brand-600 font-semibold hover:underline">
+                    Profile & Privacy
+                  </Link>
+                  .
+                </p>
+              )}
             </CardContent>
           </Card>
 
@@ -228,7 +286,7 @@ export function CreateGroupPage() {
                   1
                 </div>
                 <div>
-                  <strong>Dealer Visibility Gate:</strong> Your group becomes visible to authorized dealerships in <strong>{selectedDistrict?.name || 'Selected District'}</strong> as soon as it reaches <strong>3 members</strong> (or after 20 days with 2 members).
+                  <strong>Dealer Visibility Gate:</strong> Your group becomes visible to authorized dealerships in <strong>{selectedDistrict?.name || 'Selected District'}</strong> as soon as it reaches <strong>{visibilityThreshold} members</strong> (or after {visibilityDays} days with 2 members).
                 </div>
               </div>
 
@@ -237,7 +295,7 @@ export function CreateGroupPage() {
                   2
                 </div>
                 <div>
-                  <strong>Strong Group Milestone:</strong> 10 members is our milestone target ("Strong Group badge") to maximize volume attention from showroom heads, but dealers can begin quoting right at 3 members.
+                  <strong>Strong Group Milestone:</strong> {targetMembers} members is our milestone target ("Strong Group badge") to maximize volume attention from showroom heads, but dealers can begin quoting right at {visibilityThreshold} members.
                 </div>
               </div>
 

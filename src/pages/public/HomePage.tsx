@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
 import { Button, Input, Select, Badge, Card } from '@/components/ui';
@@ -13,6 +13,7 @@ const BODY_TYPES = ['All', 'SUV', 'Sedan', 'Hatchback', 'MUV', 'EV'];
 const FUEL_TYPES = ['All', 'Petrol', 'Diesel', 'CNG', 'Electric', 'Hybrid'];
 
 export function HomePage() {
+  const location = useLocation();
   const [models, setModels] = useState<(Model & { variants: Variant[] })[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -22,10 +23,18 @@ export function HomePage() {
   const [selectedFuel, setSelectedFuel] = useState('All');
   const [budgetMax, setBudgetMax] = useState<number>(3000000);
 
+  const catalogMaxBudget = useMemo(() => {
+    const highest = models.reduce((max, m) => Math.max(max, Number(m.starting_price || 0)), 3000000);
+    return Math.max(3000000, Math.ceil(highest / 500000) * 500000);
+  }, [models]);
+
   useEffect(() => {
     fetchModels()
       .then((data) => {
         setModels(data);
+        const highest = data.reduce((max, m) => Math.max(max, Number(m.starting_price || 0)), 3000000);
+        const ceil = Math.max(3000000, Math.ceil(highest / 500000) * 500000);
+        setBudgetMax(ceil);
         setIsLoading(false);
       })
       .catch((err) => {
@@ -35,22 +44,17 @@ export function HomePage() {
   }, []);
 
   useEffect(() => {
-    const handleHashScroll = () => {
-      const hash = window.location.hash.replace('#', '');
-      if (hash) {
-        setTimeout(() => {
-          const el = document.getElementById(hash);
-          if (el) {
-            el.scrollIntoView({ behavior: 'smooth' });
-          }
-        }, 120);
-      }
-    };
-
-    handleHashScroll();
-    window.addEventListener('hashchange', handleHashScroll);
-    return () => window.removeEventListener('hashchange', handleHashScroll);
-  }, []);
+    const hash = location.hash.replace('#', '');
+    if (hash) {
+      const timer = setTimeout(() => {
+        const el = document.getElementById(hash);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth' });
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [location.hash]);
 
   const brandOptions = useMemo(() => {
     const names = Array.from(
@@ -75,9 +79,12 @@ export function HomePage() {
       const matchesBody =
         selectedBodyType === 'All' || model.body_type === selectedBodyType;
 
-      // Fuel type match
+      // Fuel type match against active variants (fallback to model.fuel_types if empty)
       const matchesFuel =
-        selectedFuel === 'All' || model.fuel_types.includes(selectedFuel);
+        selectedFuel === 'All' ||
+        (model.variants.length > 0
+          ? model.variants.some((v) => v.fuel_type === selectedFuel)
+          : model.fuel_types.includes(selectedFuel));
 
       // Budget match (starting price <= budgetMax)
       const matchesBudget = model.starting_price <= budgetMax;
@@ -269,24 +276,24 @@ export function HomePage() {
                   <input
                     type="range"
                     min="500000"
-                    max="3000000"
+                    max={catalogMaxBudget}
                     step="50000"
                     value={budgetMax}
                     onChange={(e) => setBudgetMax(Number(e.target.value))}
                     className="w-full accent-brand-600 cursor-pointer"
                   />
                   <span className="text-xs font-bold text-slate-900 whitespace-nowrap">
-                    {formatINR(budgetMax)}
+                    {budgetMax >= catalogMaxBudget ? `${formatINR(catalogMaxBudget)}+` : formatINR(budgetMax)}
                   </span>
                 </div>
-                {(searchQuery || selectedBrand !== 'All' || selectedBodyType !== 'All' || selectedFuel !== 'All' || budgetMax < 3000000) && (
+                {(searchQuery || selectedBrand !== 'All' || selectedBodyType !== 'All' || selectedFuel !== 'All' || budgetMax < catalogMaxBudget) && (
                   <button
                     onClick={() => {
                       setSearchQuery('');
                       setSelectedBrand('All');
                       setSelectedBodyType('All');
                       setSelectedFuel('All');
-                      setBudgetMax(3000000);
+                      setBudgetMax(catalogMaxBudget);
                     }}
                     className="text-xs font-semibold text-brand-600 hover:text-brand-700 underline"
                   >

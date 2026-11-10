@@ -62,7 +62,7 @@ export function Tabs({
   }
 
   return (
-    <div className={cn('inline-flex p-1 bg-slate-100 rounded-xl gap-1', className)}>
+    <div className={cn('flex flex-wrap sm:inline-flex max-w-full p-1 bg-slate-100 rounded-xl gap-1', className)}>
       {tabs.map((tab) => {
         const isActive = tab.id === activeTab;
         return (
@@ -70,7 +70,7 @@ export function Tabs({
             key={tab.id}
             onClick={() => onChange(tab.id)}
             className={cn(
-              'flex items-center gap-2 px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all',
+              'flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-all whitespace-nowrap',
               isActive
                 ? 'bg-white text-slate-900 shadow-sm'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'

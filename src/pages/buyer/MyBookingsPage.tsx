@@ -10,7 +10,10 @@ import {
   confirmDelivery,
   submitDealerRating,
   submitDealerReport,
+  calculateBuyerRefund,
 } from '@/lib/bookingService';
+import { fetchPlatformSettings, DEFAULT_PLATFORM_SETTINGS } from '@/lib/catalogService';
+import { supabase } from '@/lib/supabase';
 import { formatINR, formatDateTime } from '@/lib/formatters';
 import { Booking } from '@/types';
 import {
@@ -22,6 +25,7 @@ import {
   ArrowRight,
   RotateCcw,
   ShieldCheck,
+  AlertCircle,
 } from 'lucide-react';
 
 export function MyBookingsPage() {
@@ -29,6 +33,14 @@ export function MyBookingsPage() {
   const { toast } = useToast();
 
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [ratedBookingIds, setRatedBookingIds] = useState<Set<string>>(new Set());
+  const [retentionPercent, setRetentionPercent] = useState<number>(
+    DEFAULT_PLATFORM_SETTINGS.buyerCancelRetentionPercent
+  );
+  const [refundFeeOnDealerFault, setRefundFeeOnDealerFault] = useState<boolean>(
+    DEFAULT_PLATFORM_SETTINGS.feeRefundOnDealerFault
+  );
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Modals state
@@ -38,17 +50,39 @@ export function MyBookingsPage() {
   const [ratingBookingTarget, setRatingBookingTarget] = useState<Booking | null>(null);
   const [starRating, setStarRating] = useState(5);
   const [reviewText, setReviewText] = useState('');
+  const [isSubmittingRating, setIsSubmittingRating] = useState(false);
 
   const [reportBookingTarget, setReportBookingTarget] = useState<Booking | null>(null);
   const [reportReason, setReportReason] = useState('did_not_honor_price');
   const [reportDetails, setReportDetails] = useState('');
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
 
   const loadBookings = useCallback(async () => {
-    if (!user) return;
+    if (!user) {
+      setIsLoading(false);
+      return;
+    }
     setIsLoading(true);
-    const all = await fetchBuyerBookings(user.id);
-    setBookings(all);
-    setIsLoading(false);
+    setLoadError(null);
+    try {
+      const [all, settings, ratingsRes] = await Promise.all([
+        fetchBuyerBookings(user.id),
+        fetchPlatformSettings(),
+        supabase.from('dealer_ratings').select('booking_id').eq('buyer_id', user.id),
+      ]);
+      setBookings(all);
+      setRetentionPercent(settings.buyerCancelRetentionPercent);
+      setRefundFeeOnDealerFault(settings.feeRefundOnDealerFault);
+      if (!ratingsRes.error && ratingsRes.data) {
+        setRatedBookingIds(
+          new Set(ratingsRes.data.map((r: { booking_id: string }) => r.booking_id))
+        );
+      }
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Unable to load your bookings.');
+    } finally {
+      setIsLoading(false);
+    }
   }, [user]);
 
   useEffect(() => {
@@ -56,82 +90,135 @@ export function MyBookingsPage() {
   }, [loadBookings]);
 
   const handleConfirmDelivery = async (bookingId: string) => {
-    const success = await confirmDelivery(bookingId);
-    if (success) {
+    const res = await confirmDelivery(bookingId);
+    if (res.success) {
       toast({
         type: 'success',
         title: 'Vehicle Delivery Confirmed!',
         message: 'Congratulations on receiving your car! Please rate your showroom experience.',
       });
-      if (user) {
-        const fresh = await fetchBuyerBookings(user.id);
-        setBookings(fresh);
-        const updated = fresh.find((b: Booking) => b.id === bookingId);
-        if (updated) setRatingBookingTarget(updated);
+      await loadBookings();
+      const fresh = await fetchBuyerBookings(user?.id || '');
+      const updated = fresh.find((b: Booking) => b.id === bookingId);
+      if (updated && !ratedBookingIds.has(bookingId)) {
+        setRatingBookingTarget(updated);
       }
+    } else {
+      toast({
+        type: 'error',
+        title: 'Could Not Confirm Delivery',
+        message: res.error || 'Please try again.',
+      });
     }
   };
 
   const handleCancelBooking = async () => {
-    if (!cancelBookingTarget) return;
+    if (!cancelBookingTarget || isCancelling) return;
     setIsCancelling(true);
 
     try {
       const res = await cancelBookingByBuyer(cancelBookingTarget.id);
+      if (!res.success) {
+        toast({
+          type: 'error',
+          title: 'Cancellation failed',
+          message: res.error || 'Unable to cancel this booking.',
+        });
+        return;
+      }
       toast({
         type: 'info',
         title: 'Booking Cancelled',
-        message: `Refund of ${formatINR(res.refundAmount)} processed. ${formatINR(res.retainedAmount)} (5%) kept by dealership.`,
+        message: `Refund of ${formatINR(res.refundAmount)} processed. ${formatINR(res.retainedAmount)} (${retentionPercent}%) retained by dealership.`,
       });
       setCancelBookingTarget(null);
-      loadBookings();
-    } catch {
-      toast({ type: 'error', title: 'Cancellation failed' });
+      await loadBookings();
+    } catch (err) {
+      toast({
+        type: 'error',
+        title: 'Cancellation failed',
+        message: err instanceof Error ? err.message : 'Unable to cancel this booking.',
+      });
     } finally {
       setIsCancelling(false);
     }
   };
 
-  const handleSubmitRating = (e: React.FormEvent) => {
+  const handleSubmitRating = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!ratingBookingTarget || !user) return;
+    if (!ratingBookingTarget || !user || isSubmittingRating) return;
 
-    submitDealerRating(
-      ratingBookingTarget.id,
-      ratingBookingTarget.dealership_id,
-      user.id,
-      starRating,
-      reviewText
-    );
+    setIsSubmittingRating(true);
+    try {
+      const res = await submitDealerRating(
+        ratingBookingTarget.id,
+        ratingBookingTarget.dealership_id,
+        user.id,
+        starRating,
+        reviewText
+      );
+      if (!res.success) {
+        toast({
+          type: 'error',
+          title: 'Review Failed',
+          message: res.error || 'Could not submit your dealer rating.',
+        });
+        return;
+      }
 
-    toast({
-      type: 'success',
-      title: 'Review Submitted',
-      message: 'Thank you for sharing your dealer experience with the AutoGroup community.',
-    });
-    setRatingBookingTarget(null);
-    setReviewText('');
+      toast({
+        type: 'success',
+        title: 'Review Submitted',
+        message: 'Thank you for sharing your dealer experience with the AutoGroup community.',
+      });
+      setRatedBookingIds((prev) => new Set(prev).add(ratingBookingTarget.id));
+      setRatingBookingTarget(null);
+      setReviewText('');
+    } finally {
+      setIsSubmittingRating(false);
+    }
   };
 
-  const handleSubmitReport = (e: React.FormEvent) => {
+  const handleSubmitReport = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!reportBookingTarget || !user) return;
+    if (!reportBookingTarget || !user || isSubmittingReport) return;
 
-    submitDealerReport(
-      reportBookingTarget.dealership_id,
-      user.id,
-      reportReason,
-      reportDetails
-    );
+    setIsSubmittingReport(true);
+    try {
+      const res = await submitDealerReport(
+        reportBookingTarget.dealership_id,
+        user.id,
+        reportReason,
+        `Booking ${reportBookingTarget.booking_code}: ${reportDetails.trim()}`
+      );
+      if (!res.success) {
+        toast({
+          type: 'error',
+          title: 'Report Submission Failed',
+          message: res.error || 'Could not submit report.',
+        });
+        return;
+      }
 
-    toast({
-      type: 'warning',
-      title: 'Report Logged',
-      message: 'Our compliance team will review this dealer pricing report.',
-    });
-    setReportBookingTarget(null);
-    setReportDetails('');
+      toast({
+        type: 'warning',
+        title: 'Report Logged',
+        message: 'Our compliance team will review this dealer pricing report.',
+      });
+      setReportBookingTarget(null);
+      setReportDetails('');
+    } finally {
+      setIsSubmittingReport(false);
+    }
   };
+
+  const cancelPreview = cancelBookingTarget
+    ? calculateBuyerRefund(
+        cancelBookingTarget.booking_amount,
+        cancelBookingTarget.platform_fee,
+        retentionPercent
+      )
+    : null;
 
   return (
     <BuyerLayout>
@@ -147,6 +234,13 @@ export function MyBookingsPage() {
             Track active reservations, locked price vouchers, delivery confirmation, and cancellation terms.
           </p>
         </div>
+
+        {loadError && (
+          <div className="p-4 rounded-xl bg-red-50 border border-red-200 flex items-center gap-2.5 text-xs text-red-800">
+            <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+            <span>{loadError}</span>
+          </div>
+        )}
 
         {isLoading ? (
           <div className="py-16 text-center text-slate-400">Loading bookings...</div>
@@ -183,13 +277,21 @@ export function MyBookingsPage() {
                           <span className="font-mono text-sm font-black text-brand-700 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">
                             {booking.booking_code}
                           </span>
+                          {booking.status === 'PENDING' && (
+                            <Badge variant="warning" size="sm">Payment Pending</Badge>
+                          )}
                           {isPaid && <Badge variant="success" size="sm">Price Locked</Badge>}
                           {isDelivered && <Badge variant="milestone" size="sm">Delivered</Badge>}
                           {booking.status === 'CANCELLED_BY_BUYER' && (
-                            <Badge variant="danger" size="sm">Cancelled by Buyer (95% Refunded)</Badge>
+                            <Badge variant="danger" size="sm">
+                              Cancelled by Buyer ({Math.max(0, 100 - retentionPercent)}% Refunded)
+                            </Badge>
                           )}
                           {booking.status === 'CANCELLED_BY_DEALER' && (
                             <Badge variant="danger" size="sm">Cancelled by Dealer (100% Refunded)</Badge>
+                          )}
+                          {booking.status === 'REFUNDED' && (
+                            <Badge variant="default" size="sm">Refunded</Badge>
                           )}
                         </div>
                         <div className="text-[11px] text-slate-400 mt-1">
@@ -249,7 +351,7 @@ export function MyBookingsPage() {
                             I Received My Car
                           </Button>
                         )}
-                        {isDelivered && (
+                        {isDelivered && !ratedBookingIds.has(booking.id) && (
                           <Button
                             variant="secondary"
                             size="sm"
@@ -258,6 +360,9 @@ export function MyBookingsPage() {
                           >
                             Rate Dealer
                           </Button>
+                        )}
+                        {isDelivered && ratedBookingIds.has(booking.id) && (
+                          <Badge variant="success" size="sm">Review Submitted</Badge>
                         )}
                         <Button
                           variant="ghost"
@@ -317,7 +422,7 @@ export function MyBookingsPage() {
             </div>
           }
         >
-          {cancelBookingTarget && (
+          {cancelBookingTarget && cancelPreview && (
             <div className="space-y-4 pt-2 text-xs">
               <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
                 <div className="font-bold text-slate-900 text-sm">
@@ -330,8 +435,8 @@ export function MyBookingsPage() {
                   </span>
                 </div>
                 <div className="flex justify-between text-rose-600 font-semibold">
-                  <span>Showroom Retention (5% Policy):</span>
-                  <span>-{formatINR(cancelBookingTarget.booking_amount * 0.05)} (₹250)</span>
+                  <span>Showroom Retention ({retentionPercent}% Policy):</span>
+                  <span>-{formatINR(cancelPreview.retainedAmount)}</span>
                 </div>
                 <div className="flex justify-between text-slate-500">
                   <span>Platform Fee (Non-refundable on buyer cancel):</span>
@@ -339,7 +444,7 @@ export function MyBookingsPage() {
                 </div>
                 <div className="pt-2 border-t border-slate-200 flex justify-between font-bold text-emerald-700 text-sm">
                   <span>Net Amount Refunded to Your Account:</span>
-                  <span>{formatINR(cancelBookingTarget.booking_amount * 0.95)} (₹4,750)</span>
+                  <span>{formatINR(cancelPreview.refundAmount)}</span>
                 </div>
               </div>
 
@@ -350,12 +455,12 @@ export function MyBookingsPage() {
                   <span>Thinking of switching dealers?</span>
                 </div>
                 <p className="leading-relaxed">
-                  Total cost of cancelling this booking is <strong>₹350</strong> (₹250 showroom retention + ₹100 platform fee). To make switching worthwhile, ensure your alternative dealer quote is at least ₹350 lower than <strong>{formatINR(cancelBookingTarget.price_snapshot.on_road_price)}</strong>.
+                  Total cost of cancelling this booking is <strong>{formatINR(cancelPreview.buyerLostAmount)}</strong> ({formatINR(cancelPreview.retainedAmount)} showroom retention + {formatINR(cancelBookingTarget.platform_fee)} platform fee). To make switching worthwhile, ensure your alternative dealer quote is at least {formatINR(cancelPreview.buyerLostAmount)} lower than <strong>{formatINR(cancelBookingTarget.price_snapshot.on_road_price)}</strong>.
                 </p>
               </div>
 
               <div className="text-[11px] text-slate-500 leading-relaxed">
-                ℹ️ If the dealership is at fault (e.g. refused to honor the locked price or failed delivery), report them below to receive 100% refund of booking amount + platform fee.
+                If the dealership is at fault (e.g. refused to honor the locked price or failed delivery), report them below to receive 100% refund of booking amount{refundFeeOnDealerFault ? ' plus platform fee' : ''}.
               </div>
             </div>
           )}
@@ -400,7 +505,13 @@ export function MyBookingsPage() {
               onChange={(e) => setReviewText(e.target.value)}
             />
 
-            <Button type="submit" variant="primary" size="md" className="w-full">
+            <Button
+              type="submit"
+              variant="primary"
+              size="md"
+              className="w-full"
+              isLoading={isSubmittingRating}
+            >
               Submit Dealer Review
             </Button>
           </form>
@@ -442,7 +553,13 @@ export function MyBookingsPage() {
               If dealer fault is confirmed (changing locked price), AutoGroup enforces <strong>100% refund of booking deposit plus platform fee</strong>.
             </div>
 
-            <Button type="submit" variant="danger" size="md" className="w-full">
+            <Button
+              type="submit"
+              variant="danger"
+              size="md"
+              className="w-full"
+              isLoading={isSubmittingReport}
+            >
               File Official Dealer Report
             </Button>
           </form>

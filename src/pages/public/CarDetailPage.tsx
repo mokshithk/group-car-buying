@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
-import { Button, Badge, Card, Select } from '@/components/ui';
+import { Button, Badge, Card, Select, useToast } from '@/components/ui';
 import { CarIllustration } from '@/components/feature/CarIllustration';
 import { fetchModelById, fetchDistricts } from '@/lib/catalogService';
+import { addToWishlist } from '@/lib/groupService';
+import { supabase } from '@/lib/supabase';
 import { Model, Variant, District } from '@/types';
 import { formatINR } from '@/lib/formatters';
 import { useAuth } from '@/context/AuthContext';
@@ -13,34 +15,64 @@ import { ArrowLeft, Users, CheckCircle, ShieldCheck, PlusCircle, Bookmark, Exter
 export function CarDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { user, profile } = useAuth();
+  const { toast } = useToast();
   const navigate = useNavigate();
 
   const [model, setModel] = useState<(Model & { variants: Variant[] }) | null>(null);
   const [districts, setDistricts] = useState<District[]>([]);
-  const [selectedDistrictId, setSelectedDistrictId] = useState(
-    profile?.district_id || ''
-  );
+  const [selectedDistrictId, setSelectedDistrictId] = useState('');
+  const [groupCountsByVariant, setGroupCountsByVariant] = useState<Map<string, number>>(new Map());
+  const [savingWishlistId, setSavingWishlistId] = useState<string | null>(null);
+  const userChangedDistrictRef = useRef(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
+    let cancelled = false;
+    setIsLoading(true);
     Promise.all([
       id ? fetchModelById(id) : Promise.resolve(null),
       fetchDistricts(),
     ])
       .then(([m, dList]) => {
+        if (cancelled) return;
         setModel(m);
         setDistricts(dList);
-        if (dList.length > 0 && !selectedDistrictId) {
+        if (dList.length > 0 && !userChangedDistrictRef.current) {
           setSelectedDistrictId(profile?.district_id || dList[0].id);
         }
         setIsLoading(false);
       })
       .catch((err) => {
+        if (cancelled) return;
         setError(err.message || 'Failed to load car details.');
         setIsLoading(false);
       });
-  }, [id, profile?.district_id, selectedDistrictId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [id, profile?.district_id]);
+
+  useEffect(() => {
+    if (!model || !selectedDistrictId || model.variants.length === 0) {
+      setGroupCountsByVariant(new Map());
+      return;
+    }
+    const variantIds = model.variants.map((v) => v.id);
+    supabase
+      .from('groups')
+      .select('id, variant_id')
+      .eq('district_id', selectedDistrictId)
+      .in('variant_id', variantIds)
+      .in('status', ['FORMING', 'OPEN_FOR_QUOTES', 'OFFERS_RECEIVED'])
+      .then(({ data }) => {
+        const counts = new Map<string, number>();
+        for (const row of (data || []) as { variant_id: string }[]) {
+          counts.set(row.variant_id, (counts.get(row.variant_id) || 0) + 1);
+        }
+        setGroupCountsByVariant(counts);
+      });
+  }, [model, selectedDistrictId]);
 
   const selectedDistrict =
     districts.find((d) => d.id === selectedDistrictId) || districts[0] || { id: '', name: 'Selected District', state: '' };
@@ -48,8 +80,45 @@ export function CarDetailPage() {
   const handleActionRequiringAuth = (targetPath: string) => {
     if (!user) {
       navigate(`/login?redirect=${encodeURIComponent(targetPath)}`);
+      return;
+    }
+    if (profile && profile.role !== 'buyer') {
+      toast({
+        type: 'info',
+        title: 'Buyer Account Required',
+        message: `Signed in as ${profile.role}. Group creation and wishlist actions are only available to buyer accounts.`,
+      });
+      return;
+    }
+    navigate(targetPath);
+  };
+
+  const handleWishlistClick = async (variantId: string) => {
+    if (!user) {
+      navigate(`/login?redirect=${encodeURIComponent(`/buyer/wishlist?addVariant=${variantId}`)}`);
+      return;
+    }
+    if (profile && profile.role !== 'buyer') {
+      toast({
+        type: 'info',
+        title: 'Buyer Account Required',
+        message: 'Only buyer accounts can save variants to a wishlist.',
+      });
+      return;
+    }
+    setSavingWishlistId(variantId);
+    const res = await addToWishlist(variantId, user.id);
+    setSavingWishlistId(null);
+    if (!res.success) {
+      toast({ type: 'error', title: 'Wishlist Error', message: res.error || 'Could not update wishlist.' });
     } else {
-      navigate(targetPath);
+      toast({
+        type: 'success',
+        title: res.alreadySaved ? 'Already in Wishlist' : 'Saved to Wishlist',
+        message: res.alreadySaved
+          ? 'This car variant is already saved in your wishlist.'
+          : 'Variant added to your wishlist.',
+      });
     }
   };
 
@@ -136,7 +205,10 @@ export function CarDetailPage() {
                 <Select
                   label="Select District to View Active Groups"
                   value={selectedDistrictId}
-                  onChange={(e) => setSelectedDistrictId(e.target.value)}
+                  onChange={(e) => {
+                    userChangedDistrictRef.current = true;
+                    setSelectedDistrictId(e.target.value);
+                  }}
                   options={districts.map((d) => ({
                     value: d.id,
                     label: `${d.name} (${d.state})`,
@@ -209,24 +281,36 @@ export function CarDetailPage() {
                     {/* District Group Status & Actions */}
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 lg:border-l lg:border-slate-100 lg:pl-6">
                       <div className="text-center sm:text-right pr-2">
-                        <div className="flex items-center justify-center sm:justify-end gap-1.5 text-xs font-semibold text-brand-700">
-                          <Users className="w-4 h-4 text-brand-600" />
-                          <span>Active District Group</span>
-                        </div>
-                        <div className="text-[11px] text-slate-600">
-                          {selectedDistrict.name}
-                        </div>
+                        {(() => {
+                          const activeGrpCount = groupCountsByVariant.get(v.id) || 0;
+                          const crossDistrictLocked =
+                            Boolean(profile?.role === 'buyer' && profile.district_id && profile.district_id !== selectedDistrictId);
+                          return (
+                            <>
+                              <div className="flex items-center justify-center sm:justify-end gap-1.5 text-xs font-semibold text-brand-700">
+                                <Users className="w-4 h-4 text-brand-600" />
+                                <span>
+                                  {crossDistrictLocked
+                                    ? 'Home District Only'
+                                    : activeGrpCount > 0
+                                    ? `${activeGrpCount} Active Group${activeGrpCount > 1 ? 's' : ''}`
+                                    : 'No Active Group Yet'}
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-slate-600">
+                                {selectedDistrict.name}
+                              </div>
+                            </>
+                          );
+                        })()}
                       </div>
 
                       <div className="flex flex-col sm:flex-row gap-2">
                         <Button
                           variant="secondary"
                           size="md"
-                          onClick={() =>
-                            handleActionRequiringAuth(
-                              `/buyer/wishlist?addVariant=${v.id}`
-                            )
-                          }
+                          isLoading={savingWishlistId === v.id}
+                          onClick={() => handleWishlistClick(v.id)}
                           leftIcon={<Bookmark className="w-4 h-4" />}
                           title="Save to Wishlist"
                         >

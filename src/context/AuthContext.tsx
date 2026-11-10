@@ -1,7 +1,7 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { isAdminRole, isSuperAdminRole } from '@/lib/adminHelpers';
-import { Profile, Dealership, UserRole, DealershipStatus } from '@/types';
+import { Profile, Dealership, UserRole, DealershipStatus, DealerUserRole } from '@/types';
 import type { User } from '@supabase/supabase-js';
 
 export interface BuyerRegistrationData {
@@ -39,6 +39,7 @@ interface AuthContextType {
   user: User | null;
   profile: Profile | null;
   dealership: Dealership | null;
+  dealerUserRole: DealerUserRole | null;
   role: UserRole | null;
   isAdmin: boolean;
   isSuperAdmin: boolean;
@@ -67,95 +68,113 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [dealership, setDealership] = useState<Dealership | null>(null);
+  const [dealerUserRole, setDealerUserRole] = useState<DealerUserRole | null>(null);
   const [isLoading, setIsLoading] = useState(() => isSupabaseConfigured());
+  const inFlightProfileFetchRef = useRef<Promise<{ profile: Profile | null; dealership: Dealership | null }> | null>(null);
 
   const fetchProfileAndDealership = useCallback(async (userId: string): Promise<{ profile: Profile | null; dealership: Dealership | null }> => {
-    try {
-      if (!isSupabaseConfigured()) {
-        return { profile: null, dealership: null };
-      }
-      const { data: prof, error: profError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
+    if (inFlightProfileFetchRef.current) {
+      return inFlightProfileFetchRef.current;
+    }
 
-      if (profError) throw profError;
+    const run = async (): Promise<{ profile: Profile | null; dealership: Dealership | null }> => {
+      try {
+        if (!isSupabaseConfigured()) {
+          return { profile: null, dealership: null };
+        }
+        const { data: prof, error: profError } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .maybeSingle();
 
-      if (prof) {
-        const p = prof as Profile;
-        setProfile(p);
+        if (profError) throw profError;
 
-        let dData: Dealership | null = null;
-        if (p.role === 'dealer') {
-          const { data: dealerUser } = await supabase
-            .from('dealer_users')
-            .select('dealership_id')
-            .eq('user_id', userId)
-            .maybeSingle();
+        if (prof) {
+          const p = prof as Profile;
+          setProfile(p);
 
-          let targetId = dealerUser?.dealership_id;
-          if (!targetId) {
-            const { data: sessionData } = await supabase.auth.getSession();
-            const userEmail = sessionData?.session?.user?.email;
-            if (userEmail) {
-              const { data: directD } = await supabase
-                .from('dealerships')
-                .select('id')
-                .eq('contact_email', userEmail)
-                .maybeSingle();
-              targetId = directD?.id;
-            }
-          }
-
-          if (targetId) {
-            const { data: dealerData } = await supabase
-              .from('dealerships')
-              .select('*')
-              .eq('id', targetId)
+          let dData: Dealership | null = null;
+          let dRole: DealerUserRole | null = null;
+          if (p.role === 'dealer') {
+            const { data: dealerUser } = await supabase
+              .from('dealer_users')
+              .select('dealership_id, role')
+              .eq('user_id', userId)
               .maybeSingle();
 
-            if (dealerData) {
-              dData = dealerData as Dealership;
-              setDealership(dData);
+            dRole = (dealerUser?.role as DealerUserRole | undefined) || null;
+            let targetId = dealerUser?.dealership_id;
+            if (!targetId) {
+              const { data: sessionData } = await supabase.auth.getSession();
+              const userEmail = sessionData?.session?.user?.email;
+              if (userEmail) {
+                const { data: directD } = await supabase
+                  .from('dealerships')
+                  .select('id')
+                  .eq('contact_email', userEmail)
+                  .maybeSingle();
+                targetId = directD?.id;
+              }
+            }
+
+            if (targetId) {
+              const { data: dealerData } = await supabase
+                .from('dealerships')
+                .select('*')
+                .eq('id', targetId)
+                .maybeSingle();
+
+              if (dealerData) {
+                dData = dealerData as Dealership;
+              }
             }
           }
-        }
-        return { profile: p, dealership: dData };
-      } else {
-        // Self-healing fallback: If user row in public.profiles table is not yet generated by trigger,
-        // construct profile from auth session user_metadata and auto-insert into public.profiles
-        const { data: sessionData } = await supabase.auth.getSession();
-        const currentUser = sessionData?.session?.user;
-        if (currentUser && currentUser.id === userId) {
-          const meta = currentUser.user_metadata || {};
-          const fallbackProfile: Profile = {
-            id: userId,
-            role: (meta.role as UserRole) || 'buyer',
-            full_name: meta.full_name || currentUser.email?.split('@')[0] || 'User',
-            phone: meta.phone || null,
-            district_id: meta.district_id || 'd1111111-1111-1111-1111-111111111101',
-            consent_share_details: meta.consent_share_details ?? true,
-            created_at: currentUser.created_at || new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          };
+          setDealership(dData);
+          setDealerUserRole(dRole);
+          return { profile: p, dealership: dData };
+        } else {
+          // Self-healing fallback for newly registered buyers before trigger row settles
+          const { data: sessionData } = await supabase.auth.getSession();
+          const currentUser = sessionData?.session?.user;
+          if (currentUser && currentUser.id === userId) {
+            const meta = currentUser.user_metadata || {};
+            const fallbackProfile: Profile = {
+              id: userId,
+              role: 'buyer',
+              full_name: meta.full_name || currentUser.email?.split('@')[0] || 'User',
+              phone: typeof meta.phone === 'string' ? meta.phone : '',
+              email: currentUser.email || undefined,
+              district_id: meta.district_id || undefined,
+              consent_share_details: meta.consent_share_details ?? false,
+              created_at: currentUser.created_at || new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            };
 
-          try {
-            await supabase.from('profiles').insert(fallbackProfile);
-          } catch (_) {
-            // Ignore insert error if RLS blocks, state profile will still be set
+            const { error: insertErr } = await supabase.from('profiles').insert(fallbackProfile);
+            if (insertErr && import.meta.env.DEV) {
+              console.warn('Fallback profile insert skipped:', insertErr.message);
+            }
+
+            setProfile(fallbackProfile);
+            setDealership(null);
+            setDealerUserRole(null);
+            return { profile: fallbackProfile, dealership: null };
           }
-
-          setProfile(fallbackProfile);
-          return { profile: fallbackProfile, dealership: null };
+        }
+      } catch (err) {
+        if (import.meta.env.DEV) {
+          console.error('Error fetching profile and dealership:', err);
         }
       }
-    } catch (err) {
-      if (import.meta.env.DEV) {
-        console.error('Error fetching profile and dealership:', err);
-      }
-    }
-    return { profile: null, dealership: null };
+      return { profile: null, dealership: null };
+    };
+
+    const promise = run().finally(() => {
+      inFlightProfileFetchRef.current = null;
+    });
+    inFlightProfileFetchRef.current = promise;
+    return promise;
   }, []);
 
   useEffect(() => {
@@ -173,13 +192,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
       setUser(session?.user ?? null);
       if (session?.user) {
-        await fetchProfileAndDealership(session.user.id);
+        if (event !== 'TOKEN_REFRESHED') {
+          await fetchProfileAndDealership(session.user.id);
+        }
       } else {
         setProfile(null);
         setDealership(null);
+        setDealerUserRole(null);
       }
       setIsLoading(false);
     });
@@ -233,6 +255,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(null);
           setProfile(null);
           setDealership(null);
+          setDealerUserRole(null);
           return {
             success: false,
             error:
@@ -247,38 +270,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // Ignore if migration 006 not yet applied
         }
 
-        await fetchProfileAndDealership(data.user.id);
+        const { profile: loadedProf, dealership: dData } = await fetchProfileAndDealership(data.user.id);
 
-        const role = (prof?.role as UserRole) || 'buyer';
-        const mustChangePassword = Boolean(prof?.must_change_password);
-        let dealershipStatus: DealershipStatus | undefined;
-
-        if (role === 'dealer') {
-          const { data: du } = await supabase
-            .from('dealer_users')
-            .select('dealership_id')
-            .eq('user_id', data.user.id)
-            .maybeSingle();
-
-          let dId = du?.dealership_id;
-          if (!dId && data.user.email) {
-            const { data: directD } = await supabase
-              .from('dealerships')
-              .select('id')
-              .eq('contact_email', data.user.email)
-              .maybeSingle();
-            dId = directD?.id;
-          }
-
-          if (dId) {
-            const { data: dRow } = await supabase
-              .from('dealerships')
-              .select('status')
-              .eq('id', dId)
-              .maybeSingle();
-            dealershipStatus = dRow?.status as DealershipStatus;
-          }
-        }
+        const role = (loadedProf?.role || prof?.role || 'buyer') as UserRole;
+        const mustChangePassword = Boolean(loadedProf?.must_change_password ?? prof?.must_change_password);
+        const dealershipStatus = dData?.status as DealershipStatus | undefined;
 
         return { success: true, role, dealershipStatus, mustChangePassword };
       }
@@ -595,6 +591,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
     setProfile(null);
     setDealership(null);
+    setDealerUserRole(null);
   };
 
   const refreshProfile = async (): Promise<{ profile: Profile | null; dealership: Dealership | null } | undefined> => {
@@ -618,6 +615,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         profile,
         dealership,
+        dealerUserRole,
         role: profile?.role ?? null,
         isAdmin: isAdminRole(profile?.role),
         isSuperAdmin: isSuperAdminRole(profile?.role),

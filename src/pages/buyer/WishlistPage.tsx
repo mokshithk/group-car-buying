@@ -1,52 +1,97 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams, Link } from 'react-router-dom';
+import { useSearchParams, Link, useNavigate } from 'react-router-dom';
 import { BuyerLayout } from '@/components/layout/BuyerLayout';
 import { Button, Card, Badge } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/Toast';
-import { getWishlist, toggleWishlist } from '@/lib/groupService';
+import { getWishlist, addToWishlist, removeFromWishlist } from '@/lib/groupService';
 import { formatINR } from '@/lib/formatters';
 import { Variant, Model } from '@/types';
-import { Bookmark, Trash2, ArrowRight, ExternalLink } from 'lucide-react';
+import { Bookmark, Trash2, ArrowRight, ExternalLink, AlertCircle } from 'lucide-react';
 
 export function WishlistPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const addVariantId = searchParams.get('addVariant');
 
   const [savedVariants, setSavedVariants] = useState<{ variant: Variant; model: Model }[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (!user) return;
+    let cancelled = false;
+
     async function load() {
-      if (!user) return;
-      if (addVariantId) {
-        await toggleWishlist(addVariantId, user.id);
-        toast({
-          type: 'success',
-          title: 'Saved to Wishlist',
-          message: 'Variant added to your personal wishlist.',
-        });
+      if (!user) {
+        setIsLoading(false);
+        return;
       }
 
-      const items = await getWishlist(user.id);
-      const populated: { variant: Variant; model: Model }[] = [];
-
-      items.forEach((item) => {
-        if (item.variant && (item.variant as any).model) {
-          populated.push({ variant: item.variant, model: (item.variant as any).model });
+      setIsLoading(true);
+      setLoadError(null);
+      try {
+        if (addVariantId) {
+          const addRes = await addToWishlist(addVariantId, user.id);
+          if (!cancelled) {
+            if (addRes.success) {
+              toast({
+                type: addRes.alreadySaved ? 'info' : 'success',
+                title: addRes.alreadySaved ? 'Already in Wishlist' : 'Saved to Wishlist',
+                message: addRes.alreadySaved
+                  ? 'This variant is already tracked in your wishlist.'
+                  : 'Variant added to your personal wishlist.',
+              });
+            } else {
+              toast({
+                type: 'error',
+                title: 'Wishlist Error',
+                message: addRes.error || 'Could not add variant to wishlist.',
+              });
+            }
+            navigate('/buyer/wishlist', { replace: true });
+          }
         }
-      });
 
-      setSavedVariants(populated);
+        const items = await getWishlist(user.id);
+        if (cancelled) return;
+
+        const populated: { variant: Variant; model: Model }[] = [];
+        items.forEach((item) => {
+          if (item.variant?.model) {
+            populated.push({ variant: item.variant, model: item.variant.model });
+          }
+        });
+        setSavedVariants(populated);
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : 'Unable to load saved wishlist.');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
     }
+
     load();
-  }, [user, addVariantId, toast]);
+    return () => {
+      cancelled = true;
+    };
+  }, [user, addVariantId, toast, navigate]);
 
   const handleRemove = async (variantId: string) => {
     if (!user) return;
-    await toggleWishlist(variantId, user.id);
+    const res = await removeFromWishlist(variantId, user.id);
+    if (!res.success) {
+      toast({
+        type: 'error',
+        title: 'Could Not Remove',
+        message: res.error || 'Failed to remove variant from wishlist.',
+      });
+      return;
+    }
     setSavedVariants((prev) => prev.filter((item) => item.variant.id !== variantId));
     toast({
       type: 'info',
@@ -69,7 +114,16 @@ export function WishlistPage() {
           </p>
         </div>
 
-        {savedVariants.length === 0 ? (
+        {loadError && (
+          <div className="p-4 rounded-xl bg-red-50 border border-red-200 flex items-center gap-2.5 text-xs text-red-800">
+            <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+            <span>{loadError}</span>
+          </div>
+        )}
+
+        {isLoading ? (
+          <div className="py-16 text-center text-slate-400">Loading your wishlist...</div>
+        ) : savedVariants.length === 0 ? (
           <Card className="text-center py-16 p-8">
             <Bookmark className="w-12 h-12 text-slate-300 mx-auto mb-3" />
             <h3 className="text-base font-bold text-slate-800">Your wishlist is empty</h3>

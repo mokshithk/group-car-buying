@@ -26,11 +26,11 @@ export function BuyerRegisterPage() {
   useEffect(() => {
     fetchDistricts().then((dList) => {
       setDistricts(dList);
-      if (dList.length > 0 && !districtId) {
-        setDistrictId(dList[0].id);
+      if (dList.length > 0) {
+        setDistrictId((prev) => prev || dList[0].id);
       }
     }).catch(console.error);
-  }, [districtId]);
+  }, []);
 
   const { requestSignupOtp, registerBuyer, refreshProfile } = useAuth();
   const navigate = useNavigate();
@@ -44,6 +44,10 @@ export function BuyerRegisterPage() {
       setError('You must consent to sharing contact details with quoting dealerships upon expressing interest or booking.');
       return;
     }
+    if (!/^[+\d\s-]{10,16}$/.test(phone.trim())) {
+      setError('Please enter a valid 10-digit mobile number.');
+      return;
+    }
     if (password.length < 8) {
       setError('Password must be at least 8 characters long.');
       return;
@@ -51,18 +55,21 @@ export function BuyerRegisterPage() {
 
     setError('');
     setIsLoading(true);
-
-    const otpRes = await requestSignupOtp(email, fullName);
-    setIsLoading(false);
-
-    if (otpRes.success) {
-      setDevOtp(otpRes.devOtp || '');
-      setSmtpError(otpRes.smtpError || '');
-      setChallengeToken(otpRes.challengeToken || '');
-      setShowOtp(true);
-    } else {
-      setAlreadyRegistered(Boolean(otpRes.alreadyRegistered));
-      setError(otpRes.error || 'Unable to start verification.');
+    try {
+      const otpRes = await requestSignupOtp(email.trim(), fullName.trim());
+      if (otpRes.success) {
+        setDevOtp(otpRes.devOtp || '');
+        setSmtpError(otpRes.smtpError || '');
+        setChallengeToken(otpRes.challengeToken || '');
+        setShowOtp(true);
+      } else {
+        setAlreadyRegistered(Boolean(otpRes.alreadyRegistered));
+        setError(otpRes.error || 'Unable to start verification.');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to start verification.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -100,6 +107,10 @@ export function BuyerRegisterPage() {
               });
               if (!res.success) {
                 throw new Error(res.error || 'Registration failed after OTP verification.');
+              }
+              if (res.requiresEmailConfirmation) {
+                navigate(`/register/verify-otp?email=${encodeURIComponent(email.trim())}&type=signup`, { replace: true });
+                return;
               }
               await refreshProfile();
               navigate(redirectUrl || '/buyer/dashboard', { replace: true });

@@ -1,14 +1,15 @@
 /**
  * Simulated Payment Service Layer
- * Exactly three functions: createPayment, verifyPayment, refundPayment.
- * Returns realistic transaction fields.
- * Can be swapped with Razorpay/Cashfree gateway without touching the pages.
+ * Tracks created payment intents in memory so verifyPayment preserves the
+ * actual bookingId, amount, and chosen payment method instead of hardcoding defaults.
  */
+
+export type PaymentMethod = 'UPI' | 'CARD' | 'NET_BANKING';
 
 export interface CreatePaymentParams {
   bookingId: string;
   amount: number;
-  method?: 'UPI' | 'CARD' | 'NET_BANKING';
+  method?: PaymentMethod;
 }
 
 export interface PaymentResult {
@@ -16,7 +17,7 @@ export interface PaymentResult {
   bookingId: string;
   status: 'PENDING' | 'SUCCESS' | 'FAILED' | 'CANCELLED';
   amount: number;
-  method: 'UPI' | 'CARD' | 'NET_BANKING';
+  method: PaymentMethod;
   timestamp: string;
   currency: string;
   gatewayReference?: string;
@@ -34,37 +35,41 @@ export interface RefundResult {
   reason: 'BUYER_CANCEL' | 'DEALER_FAULT';
 }
 
-/**
- * 1. createPayment: Initiates a transaction order
- */
+const intentStore = new Map<string, { bookingId: string; amount: number; method: PaymentMethod }>();
+
 export async function createPayment(params: CreatePaymentParams): Promise<PaymentResult> {
   const paymentId = 'pay_' + Math.random().toString(36).substring(2, 12);
-  const result: PaymentResult = {
+  const method: PaymentMethod = params.method || 'UPI';
+
+  intentStore.set(paymentId, {
+    bookingId: params.bookingId,
+    amount: params.amount,
+    method,
+  });
+
+  return {
     paymentId,
     bookingId: params.bookingId,
     status: 'PENDING',
     amount: params.amount,
-    method: params.method || 'UPI',
+    method,
     timestamp: new Date().toISOString(),
     currency: 'INR',
     gatewayReference: 'sim_' + Math.random().toString(36).substring(2, 10),
   };
-  return result;
 }
 
-/**
- * 2. verifyPayment: Confirms outcome of payment (Success / Failed / Cancelled)
- */
 export async function verifyPayment(
   paymentId: string,
   targetOutcome: 'SUCCESS' | 'FAILED' | 'CANCELLED' = 'SUCCESS'
 ): Promise<PaymentResult> {
-  const result: PaymentResult = {
+  const stored = intentStore.get(paymentId);
+  return {
     paymentId,
-    bookingId: '',
+    bookingId: stored?.bookingId || '',
     status: targetOutcome,
-    amount: 5100,
-    method: 'UPI',
+    amount: stored?.amount ?? 0,
+    method: stored?.method || 'UPI',
     timestamp: new Date().toISOString(),
     currency: 'INR',
     gatewayReference: 'sim_ref_' + Math.random().toString(36).substring(2, 10),
@@ -75,21 +80,16 @@ export async function verifyPayment(
         ? 'Payment authorization cancelled by user.'
         : undefined,
   };
-  return result;
 }
 
-/**
- * 3. refundPayment: Processes simulated refund for cancellation
- */
 export async function refundPayment(
   paymentId: string,
   bookingId: string,
   amount: number,
   reason: 'BUYER_CANCEL' | 'DEALER_FAULT'
 ): Promise<RefundResult> {
-  const refundId = 'rfnd_' + Math.random().toString(36).substring(2, 12);
-  const result: RefundResult = {
-    refundId,
+  return {
+    refundId: 'rfnd_' + Math.random().toString(36).substring(2, 12),
     paymentId,
     bookingId,
     amount,
@@ -98,5 +98,4 @@ export async function refundPayment(
     currency: 'INR',
     reason,
   };
-  return result;
 }

@@ -1,73 +1,63 @@
-import { Group, GroupMember, WishlistItem, BuyerPreferences } from '@/types';
+import { Group, GroupMember, Profile, WishlistItem, BuyerPreferences } from '@/types';
 import { supabase, isSupabaseConfigured } from './supabase';
+import { fetchPlatformSettings, PlatformSettingsConfig } from './catalogService';
 
-/**
- * Group Service: Real Supabase implementation
- * Implements business rules for groups, memberships, visibility, and buyer lists.
- * No mock arrays or in-memory fallbacks.
- */
+const OPEN_GROUP_STATUSES = new Set(['FORMING', 'OPEN_FOR_QUOTES', 'OFFERS_RECEIVED']);
 
-export async function fetchGroupsForDistrict(districtId: string): Promise<Group[]> {
-  if (!isSupabaseConfigured()) {
-    throw new Error('Supabase client is not configured.');
-  }
-
-  const { data, error } = await supabase
-    .from('groups')
-    .select('*, variant:variants(*, model:models(*, manufacturer:manufacturers(*))), district:districts(*), group_members(id, status, user_id), bookings(id, status)')
-    .eq('district_id', districtId)
-    .order('created_at', { ascending: false });
-
-  if (error) {
-    throw new Error(`Failed to fetch groups for district: ${error.message}`);
-  }
-
-  return (data || []).map((item: any) => {
-    const activeMembers = item.group_members?.filter((m: any) => m.status === 'ACTIVE') || [];
-    const activeCount = activeMembers.length;
-    const bookingsCount = item.bookings?.filter((b: any) => b.status === 'PAID' || b.status === 'DELIVERED').length || 0;
-    const daysOld = Math.floor((Date.now() - new Date(item.created_at).getTime()) / (1000 * 60 * 60 * 24));
-    
-    // Visibility rule: Active >= 3 OR (Active == 2 AND elapsed days >= 20). 1 member is NEVER visible.
-    const isVisible = activeCount >= 3 || (activeCount === 2 && daysOld >= 20);
-    const daysUntilVisible = activeCount === 2 ? Math.max(0, 20 - daysOld) : (activeCount === 1 ? 20 : 0);
-
-    return {
-      ...item,
-      member_count: activeCount,
-      bookings_so_far: bookingsCount,
-      is_visible_to_dealers: isVisible,
-      days_until_visible: daysUntilVisible,
-    };
-  });
+interface PublicMetricRow {
+  group_id: string;
+  active_members: number;
+  bookings_so_far: number;
+  is_visible_to_dealers: boolean;
 }
 
-export async function fetchGroupById(groupId: string): Promise<Group | null> {
-  if (!isSupabaseConfigured()) {
-    throw new Error('Supabase client is not configured.');
+async function fetchPublicMetricsMap(groupIds: string[]): Promise<Map<string, PublicMetricRow>> {
+  const map = new Map<string, PublicMetricRow>();
+  if (groupIds.length === 0) return map;
+
+  try {
+    const { data, error } = await supabase.rpc('get_group_public_metrics', {
+      p_group_ids: groupIds,
+    });
+    if (!error && Array.isArray(data)) {
+      for (const row of data as PublicMetricRow[]) {
+        map.set(row.group_id, row);
+      }
+    }
+  } catch {
+    // Graceful fallback before migration 008
   }
+  return map;
+}
 
-  const { data, error } = await supabase
-    .from('groups')
-    .select('*, variant:variants(*, model:models(*, manufacturer:manufacturers(*))), district:districts(*), group_members(id, status, user_id), bookings(id, status)')
-    .eq('id', groupId)
-    .maybeSingle();
+function hydrateGroupRow(
+  item: any,
+  settings: PlatformSettingsConfig,
+  metricsMap: Map<string, PublicMetricRow>
+): Group {
+  const metric = metricsMap.get(item.id);
+  const activeMembers = (item.group_members || []).filter((m: any) => m.status === 'ACTIVE');
+  const activeCount = metric ? Number(metric.active_members ?? 0) : activeMembers.length;
+  const bookingsCount = metric
+    ? Number(metric.bookings_so_far ?? 0)
+    : (item.bookings || []).filter((b: any) => b.status === 'PAID' || b.status === 'DELIVERED').length;
 
-  if (error) {
-    throw new Error(`Failed to fetch group: ${error.message}`);
+  const daysOld = Math.max(0, Math.floor((Date.now() - new Date(item.created_at).getTime()) / (1000 * 60 * 60 * 24)));
+  const minMembers = settings.visibilityMemberThreshold;
+  const visDays = settings.groupVisibilityDaysFor2Members;
+  const isOpen = OPEN_GROUP_STATUSES.has(item.status);
+
+  const computedVisible =
+    isOpen && (activeCount >= minMembers || (activeCount === 2 && daysOld >= visDays));
+  const isVisible = metric ? Boolean(metric.is_visible_to_dealers) && isOpen : computedVisible;
+
+  let daysUntilVisible = 0;
+  if (isOpen && !isVisible) {
+    daysUntilVisible = activeCount === 2 ? Math.max(0, visDays - daysOld) : visDays;
   }
-
-  if (!data) return null;
-
-  const activeMembers = data.group_members?.filter((m: any) => m.status === 'ACTIVE') || [];
-  const activeCount = activeMembers.length;
-  const bookingsCount = data.bookings?.filter((b: any) => b.status === 'PAID' || b.status === 'DELIVERED').length || 0;
-  const daysOld = Math.floor((Date.now() - new Date(data.created_at).getTime()) / (1000 * 60 * 60 * 24));
-  const isVisible = activeCount >= 3 || (activeCount === 2 && daysOld >= 20);
-  const daysUntilVisible = activeCount === 2 ? Math.max(0, 20 - daysOld) : (activeCount === 1 ? 20 : 0);
 
   return {
-    ...data,
+    ...item,
     member_count: activeCount,
     bookings_so_far: bookingsCount,
     is_visible_to_dealers: isVisible,
@@ -75,9 +65,169 @@ export async function fetchGroupById(groupId: string): Promise<Group | null> {
   };
 }
 
+export async function fetchGroupsForDistrict(
+  districtId: string,
+  options?: { includeClosed?: boolean }
+): Promise<Group[]> {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase client is not configured.');
+  }
+
+  const [settings, { data, error }] = await Promise.all([
+    fetchPlatformSettings(),
+    supabase
+      .from('groups')
+      .select(
+        '*, variant:variants(*, model:models(*, manufacturer:manufacturers(*))), district:districts(*), group_members(id, status, user_id), bookings(id, status)'
+      )
+      .eq('district_id', districtId)
+      .order('created_at', { ascending: false }),
+  ]);
+
+  if (error) {
+    throw new Error(`Failed to fetch groups for district: ${error.message}`);
+  }
+
+  const rows = (data || []).filter((row: any) =>
+    options?.includeClosed ? true : OPEN_GROUP_STATUSES.has(row.status)
+  );
+  const metricsMap = await fetchPublicMetricsMap(rows.map((r: any) => r.id));
+
+  return rows.map((row: any) => hydrateGroupRow(row, settings, metricsMap));
+}
+
+export async function fetchBuyerJoinedGroups(userId: string): Promise<Group[]> {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase client is not configured.');
+  }
+
+  const [settings, { data, error }] = await Promise.all([
+    fetchPlatformSettings(),
+    supabase
+      .from('group_members')
+      .select(
+        'status, group:groups(*, variant:variants(*, model:models(*, manufacturer:manufacturers(*))), district:districts(*), group_members(id, status, user_id), bookings(id, status))'
+      )
+      .eq('user_id', userId)
+      .in('status', ['ACTIVE', 'BOOKED'])
+      .order('joined_at', { ascending: false }),
+  ]);
+
+  if (error) {
+    throw new Error(`Failed to fetch joined groups: ${error.message}`);
+  }
+
+  const groupRows = (data || [])
+    .map((m: any) => (m.group ? { ...m.group, membership_status: m.status } : null))
+    .filter((g: any) => Boolean(g));
+
+  const uniqueMap = new Map<string, any>();
+  for (const g of groupRows) {
+    if (!uniqueMap.has(g.id)) {
+      uniqueMap.set(g.id, g);
+    } else if (g.membership_status === 'BOOKED') {
+      uniqueMap.set(g.id, g);
+    }
+  }
+  const uniqueGroups = Array.from(uniqueMap.values());
+  const metricsMap = await fetchPublicMetricsMap(uniqueGroups.map((g: any) => g.id));
+
+  return uniqueGroups.map((g: any) => ({
+    ...hydrateGroupRow(g, settings, metricsMap),
+    membership_status: g.membership_status,
+  }));
+}
+
+export async function fetchDealerEligibleGroups(
+  districtIds: string[],
+  brands: string[] = []
+): Promise<Group[]> {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase client is not configured.');
+  }
+
+  const cleanDistricts = Array.from(new Set(districtIds.filter(Boolean)));
+  if (cleanDistricts.length === 0) return [];
+
+  const [settings, { data, error }] = await Promise.all([
+    fetchPlatformSettings(),
+    supabase
+      .from('groups')
+      .select(
+        '*, variant:variants(*, model:models(*, manufacturer:manufacturers(*))), district:districts(*), group_members(id, status, user_id), bookings(id, status)'
+      )
+      .in('district_id', cleanDistricts)
+      .in('status', ['FORMING', 'OPEN_FOR_QUOTES', 'OFFERS_RECEIVED'])
+      .order('created_at', { ascending: false }),
+  ]);
+
+  if (error) {
+    throw new Error(`Failed to fetch eligible dealer groups: ${error.message}`);
+  }
+
+  const normalizedBrands = brands.map((b) => b.trim().toLowerCase()).filter(Boolean);
+  const filteredRows = (data || []).filter((g: any) => {
+    if (normalizedBrands.length === 0) return true;
+    const mfr = g.variant?.model?.manufacturer;
+    const mfrId = (mfr?.id || g.variant?.model?.manufacturer_id || '').toLowerCase();
+    const mfrName = (mfr?.name || '').toLowerCase();
+    return normalizedBrands.includes(mfrName) || normalizedBrands.includes(mfrId);
+  });
+
+  const metricsMap = await fetchPublicMetricsMap(filteredRows.map((g: any) => g.id));
+  return filteredRows
+    .map((row: any) => hydrateGroupRow(row, settings, metricsMap))
+    .filter((g) => Boolean(g.is_visible_to_dealers));
+}
+
+export async function fetchGroupById(groupId: string): Promise<Group | null> {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase client is not configured.');
+  }
+
+  const [settings, { data, error }] = await Promise.all([
+    fetchPlatformSettings(),
+    supabase
+      .from('groups')
+      .select(
+        '*, variant:variants(*, model:models(*, manufacturer:manufacturers(*))), district:districts(*), group_members(id, status, user_id), bookings(id, status)'
+      )
+      .eq('id', groupId)
+      .maybeSingle(),
+  ]);
+
+  if (error) {
+    throw new Error(`Failed to fetch group: ${error.message}`);
+  }
+
+  if (!data) return null;
+  const metricsMap = await fetchPublicMetricsMap([groupId]);
+  return hydrateGroupRow(data, settings, metricsMap);
+}
+
 export async function fetchGroupMembers(groupId: string): Promise<GroupMember[]> {
   if (!isSupabaseConfigured()) {
     throw new Error('Supabase client is not configured.');
+  }
+
+  // Prefer privacy-safe SECURITY DEFINER RPC so fellow members show "FirstName L."
+  try {
+    const { data: rpcRows, error: rpcErr } = await supabase.rpc('get_group_member_summaries', {
+      p_group_id: groupId,
+    });
+    if (!rpcErr && Array.isArray(rpcRows)) {
+      return rpcRows.map((row: any) => ({
+        id: row.id,
+        group_id: row.group_id,
+        user_id: row.user_id,
+        is_creator: Boolean(row.is_creator),
+        status: row.status,
+        joined_at: row.joined_at,
+        profile: { full_name: row.display_name } as Profile,
+      }));
+    }
+  } catch {
+    // Fallback before migration 008
   }
 
   const { data, error } = await supabase
@@ -103,37 +253,65 @@ export async function joinGroup(
     throw new Error('Supabase client is not configured.');
   }
 
-  // 1. Fetch group to find target variant_id
-  const { data: targetGroup, error: grpErr } = await supabase
-    .from('groups')
-    .select('id, variant_id, status')
-    .eq('id', groupId)
-    .maybeSingle();
+  const { data: rpcData, error: rpcErr } = await supabase.rpc('join_buying_group', {
+    p_group_id: groupId,
+  });
+
+  if (!rpcErr && rpcData) {
+    const payload = rpcData as { success?: boolean; error?: string };
+    return {
+      success: Boolean(payload.success),
+      error: payload.error,
+    };
+  }
+
+  if (rpcErr && !rpcErr.message.includes('join_buying_group')) {
+    return { success: false, error: rpcErr.message };
+  }
+
+  // Fallback path when RPC is not yet deployed
+  const [settings, { data: targetGroup, error: grpErr }] = await Promise.all([
+    fetchPlatformSettings(),
+    supabase.from('groups').select('id, variant_id, status').eq('id', groupId).maybeSingle(),
+  ]);
 
   if (grpErr || !targetGroup) {
-    return { success: false, error: 'Group not found.' };
+    return { success: false, error: grpErr?.message || 'Group not found.' };
+  }
+  if (!OPEN_GROUP_STATUSES.has(targetGroup.status)) {
+    return {
+      success: false,
+      error: `This buying group is already ${targetGroup.status.toLowerCase()} and cannot accept new members.`,
+    };
   }
 
-  // 2. Enforce Business Rule: One group per buyer per variant
-  const { data: existingMemberships, error: memErr } = await supabase
+  const { data: existingMemberships } = await supabase
     .from('group_members')
-    .select('id, group_id, status, group:groups(variant_id)')
+    .select('id, group_id, status, group:groups(variant_id, status)')
     .eq('user_id', userId)
-    .eq('status', 'ACTIVE');
+    .in('status', ['ACTIVE', 'BOOKED']);
 
-  if (!memErr && existingMemberships) {
-    const duplicate = existingMemberships.find(
-      (m: any) => m.group?.variant_id === targetGroup.variant_id && m.group_id !== groupId
-    );
-    if (duplicate) {
-      return {
-        success: false,
-        error: 'You are already an active member of another group for this exact car variant. Platform rule: one group per buyer per variant.',
-      };
-    }
+  const bookedSameGroup = (existingMemberships || []).find(
+    (m: any) => m.group_id === groupId && m.status === 'BOOKED'
+  );
+  if (bookedSameGroup) {
+    return { success: false, error: 'You already locked a booking from this buying group.' };
   }
 
-  // 3. Upsert active membership
+  const duplicate = (existingMemberships || []).find(
+    (m: any) =>
+      m.status === 'ACTIVE' &&
+      m.group?.variant_id === targetGroup.variant_id &&
+      m.group_id !== groupId &&
+      OPEN_GROUP_STATUSES.has(m.group?.status)
+  );
+  if (duplicate) {
+    return {
+      success: false,
+      error: 'You are already an active member of another group for this exact car variant.',
+    };
+  }
+
   const { error: insertErr } = await supabase.from('group_members').upsert(
     {
       group_id: groupId,
@@ -143,21 +321,20 @@ export async function joinGroup(
       joined_at: new Date().toISOString(),
       left_at: null,
     },
-    { onConflict: 'group_id, user_id' }
+    { onConflict: 'group_id,user_id' }
   );
 
   if (insertErr) {
     return { success: false, error: insertErr.message };
   }
 
-  // 4. Check if group should transition from FORMING to OPEN_FOR_QUOTES (3 or more members)
   const { count } = await supabase
     .from('group_members')
     .select('id', { count: 'exact', head: true })
     .eq('group_id', groupId)
     .eq('status', 'ACTIVE');
 
-  if (count && count >= 3 && targetGroup.status === 'FORMING') {
+  if (count && count >= settings.visibilityMemberThreshold && targetGroup.status === 'FORMING') {
     await supabase.from('groups').update({ status: 'OPEN_FOR_QUOTES' }).eq('id', groupId);
   }
 
@@ -172,7 +349,22 @@ export async function leaveGroup(
     throw new Error('Supabase client is not configured.');
   }
 
-  // Find membership
+  const { data: rpcData, error: rpcErr } = await supabase.rpc('leave_buying_group', {
+    p_group_id: groupId,
+  });
+
+  if (!rpcErr && rpcData) {
+    const payload = rpcData as { success?: boolean; error?: string };
+    return {
+      success: Boolean(payload.success),
+      error: payload.error,
+    };
+  }
+
+  if (rpcErr && !rpcErr.message.includes('leave_buying_group')) {
+    return { success: false, error: rpcErr.message };
+  }
+
   const { data: membership, error: fetchErr } = await supabase
     .from('group_members')
     .select('*')
@@ -181,42 +373,20 @@ export async function leaveGroup(
     .eq('status', 'ACTIVE')
     .maybeSingle();
 
-  if (fetchErr || !membership) {
-    return { success: true }; // Already left or not in group
+  if (fetchErr) {
+    return { success: false, error: fetchErr.message };
+  }
+  if (!membership) {
+    return { success: true };
   }
 
-  // Update status to LEFT
   const { error: updateErr } = await supabase
     .from('group_members')
-    .update({ status: 'LEFT', left_at: new Date().toISOString() })
+    .update({ status: 'LEFT', is_creator: false, left_at: new Date().toISOString() })
     .eq('id', membership.id);
 
   if (updateErr) {
     return { success: false, error: updateErr.message };
-  }
-
-  // If creator leaves, promote the next active member
-  if (membership.is_creator) {
-    const { data: nextActive } = await supabase
-      .from('group_members')
-      .select('*')
-      .eq('group_id', groupId)
-      .eq('status', 'ACTIVE')
-      .order('joined_at', { ascending: true })
-      .limit(1)
-      .maybeSingle();
-
-    if (nextActive) {
-      await supabase
-        .from('group_members')
-        .update({ is_creator: true })
-        .eq('id', nextActive.id);
-
-      await supabase
-        .from('groups')
-        .update({ created_by: nextActive.user_id })
-        .eq('id', groupId);
-    }
   }
 
   return { success: true };
@@ -232,32 +402,48 @@ export async function createGroup(
     throw new Error('Supabase client is not configured.');
   }
 
-  // Enforce rule: One group per buyer per variant
+  const { data: rpcData, error: rpcErr } = await supabase.rpc('create_buying_group', {
+    p_variant_id: variantId,
+    p_district_id: districtId || null,
+  });
+
+  if (!rpcErr && rpcData) {
+    const payload = rpcData as { success?: boolean; group_id?: string; error?: string };
+    return {
+      success: Boolean(payload.success),
+      groupId: payload.group_id,
+      error: payload.error,
+    };
+  }
+
+  if (rpcErr && !rpcErr.message.includes('create_buying_group')) {
+    return { success: false, error: rpcErr.message };
+  }
+
+  const settings = await fetchPlatformSettings();
+
   const { data: existingMemberships } = await supabase
     .from('group_members')
-    .select('id, group:groups(variant_id)')
+    .select('id, group:groups(variant_id, status)')
     .eq('user_id', userId)
     .eq('status', 'ACTIVE');
 
-  if (existingMemberships) {
-    const duplicate = existingMemberships.find(
-      (m: any) => m.group?.variant_id === variantId
-    );
-    if (duplicate) {
-      return {
-        success: false,
-        error: 'You already belong to an active group for this car variant. One group per buyer per variant is enforced.',
-      };
-    }
+  const duplicate = (existingMemberships || []).find(
+    (m: any) => m.group?.variant_id === variantId && OPEN_GROUP_STATUSES.has(m.group?.status)
+  );
+  if (duplicate) {
+    return {
+      success: false,
+      error: 'You already belong to an active group for this car variant. One group per buyer per variant is enforced.',
+    };
   }
 
-  // Insert group
   const { data: newGroup, error: grpError } = await supabase
     .from('groups')
     .insert({
       variant_id: variantId,
       district_id: districtId,
-      target_members: 10,
+      target_members: settings.defaultGroupTarget,
       status: 'FORMING',
       created_by: userId,
     })
@@ -268,7 +454,6 @@ export async function createGroup(
     return { success: false, error: grpError?.message || 'Failed to create group.' };
   }
 
-  // Insert creator as active member
   const { error: memError } = await supabase.from('group_members').insert({
     group_id: newGroup.id,
     user_id: userId,
@@ -283,9 +468,10 @@ export async function createGroup(
   return { success: true, groupId: newGroup.id };
 }
 
-// Wishlist helpers
 export async function getWishlist(userId: string): Promise<WishlistItem[]> {
-  if (!isSupabaseConfigured()) return [];
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase client is not configured.');
+  }
 
   const { data, error } = await supabase
     .from('wishlist')
@@ -294,36 +480,99 @@ export async function getWishlist(userId: string): Promise<WishlistItem[]> {
     .order('created_at', { ascending: false });
 
   if (error) {
-    console.error('Error fetching wishlist:', error);
-    return [];
+    throw new Error(`Failed to load wishlist: ${error.message}`);
   }
 
-  return (data || []) as WishlistItem[];
+  return ((data || []) as any[]).filter(
+    (row) =>
+      row.variant &&
+      row.variant.is_active !== false &&
+      row.variant.model?.is_active !== false &&
+      row.variant.model?.manufacturer?.is_active !== false
+  ) as WishlistItem[];
 }
 
-export async function toggleWishlist(variantId: string, userId: string): Promise<boolean> {
-  if (!isSupabaseConfigured()) return false;
+export async function addToWishlist(
+  variantId: string,
+  userId: string
+): Promise<{ success: boolean; alreadySaved?: boolean; error?: string }> {
+  if (!isSupabaseConfigured()) {
+    return { success: false, error: 'Supabase is not configured.' };
+  }
 
-  const { data: existing } = await supabase
+  const { data: existing, error: checkErr } = await supabase
     .from('wishlist')
     .select('id')
     .eq('user_id', userId)
     .eq('variant_id', variantId)
     .maybeSingle();
 
-  if (existing) {
-    await supabase.from('wishlist').delete().eq('id', existing.id);
-    return false; // Removed
-  } else {
-    await supabase.from('wishlist').insert({
-      user_id: userId,
-      variant_id: variantId,
-    });
-    return true; // Added
+  if (checkErr) {
+    return { success: false, error: checkErr.message };
   }
+  if (existing) {
+    return { success: true, alreadySaved: true };
+  }
+
+  const { error } = await supabase.from('wishlist').insert({
+    user_id: userId,
+    variant_id: variantId,
+  });
+
+  if (error) {
+    return { success: false, error: error.message };
+  }
+  return { success: true, alreadySaved: false };
 }
 
-// Buyer Preferences helpers
+export async function removeFromWishlist(
+  variantId: string,
+  userId: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!isSupabaseConfigured()) {
+    return { success: false, error: 'Supabase is not configured.' };
+  }
+
+  const { error } = await supabase
+    .from('wishlist')
+    .delete()
+    .eq('user_id', userId)
+    .eq('variant_id', variantId);
+
+  if (error) {
+    return { success: false, error: error.message };
+  }
+  return { success: true };
+}
+
+export async function toggleWishlist(variantId: string, userId: string): Promise<boolean> {
+  if (!isSupabaseConfigured()) return false;
+
+  const { data: existing, error: fetchErr } = await supabase
+    .from('wishlist')
+    .select('id')
+    .eq('user_id', userId)
+    .eq('variant_id', variantId)
+    .maybeSingle();
+
+  if (fetchErr) {
+    throw new Error(fetchErr.message);
+  }
+
+  if (existing) {
+    const { error } = await supabase.from('wishlist').delete().eq('id', existing.id);
+    if (error) throw new Error(error.message);
+    return false;
+  }
+
+  const { error } = await supabase.from('wishlist').insert({
+    user_id: userId,
+    variant_id: variantId,
+  });
+  if (error) throw new Error(error.message);
+  return true;
+}
+
 export async function getBuyerPreferences(userId: string): Promise<BuyerPreferences | null> {
   if (!isSupabaseConfigured()) return null;
 
@@ -333,8 +582,10 @@ export async function getBuyerPreferences(userId: string): Promise<BuyerPreferen
     .eq('user_id', userId)
     .maybeSingle();
 
-  if (error || !data) return null;
-  return data as BuyerPreferences;
+  if (error) {
+    throw new Error(`Failed to load preferences: ${error.message}`);
+  }
+  return (data as BuyerPreferences | null) ?? null;
 }
 
 export async function saveBuyerPreferences(
@@ -347,7 +598,7 @@ export async function saveBuyerPreferences(
 
   const payload = {
     user_id: userId,
-    district_id: prefs.district_id,
+    district_id: prefs.district_id || null,
     preferred_brands: prefs.preferred_brands || [],
     preferred_fuel_types: prefs.preferred_fuel_types || [],
     budget_min: prefs.budget_min,

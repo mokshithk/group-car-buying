@@ -4,8 +4,9 @@ import { BuyerLayout } from '@/components/layout/BuyerLayout';
 import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent, Tabs } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/Toast';
-import { fetchQuotationsForGroup } from '@/lib/quoteService';
+import { fetchQuotationById, isQuoteExpired } from '@/lib/quoteService';
 import { fetchGroupById } from '@/lib/groupService';
+import { fetchPlatformSettings, DEFAULT_PLATFORM_SETTINGS } from '@/lib/catalogService';
 import { executeBooking } from '@/lib/bookingService';
 import { createPayment, verifyPayment } from '@/lib/paymentService';
 import { formatINR } from '@/lib/formatters';
@@ -29,6 +30,13 @@ export function BookingPaymentPage() {
 
   const [quote, setQuote] = useState<Quotation | null>(null);
   const [group, setGroup] = useState<Group | null>(null);
+  const [bookingAmount, setBookingAmount] = useState<number>(
+    DEFAULT_PLATFORM_SETTINGS.bookingAmount
+  );
+  const [platformFee, setPlatformFee] = useState<number>(
+    DEFAULT_PLATFORM_SETTINGS.platformFee
+  );
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Payment UI state
@@ -36,29 +44,78 @@ export function BookingPaymentPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  // Fixed amounts (configurable settings)
-  const bookingAmount = 5000;
-  const platformFee = 100;
-  const totalPayable = bookingAmount + platformFee; // ₹5,100
+  const totalPayable = bookingAmount + platformFee;
 
   useEffect(() => {
+    let cancelled = false;
+
     async function load() {
-      if (!quoteId) return;
-      setIsLoading(true);
-      const g = await fetchGroupById('f1111111-1111-1111-1111-111111111101');
-      if (g) {
-        setGroup(g);
-        const quotes = await fetchQuotationsForGroup(g.id);
-        const target = quotes.find((q) => q.id === quoteId) || quotes[0];
-        setQuote(target);
+      if (!quoteId) {
+        setIsLoading(false);
+        return;
       }
-      setIsLoading(false);
+
+      setIsLoading(true);
+      setLoadError(null);
+      try {
+        const [target, settings] = await Promise.all([
+          fetchQuotationById(quoteId),
+          fetchPlatformSettings(),
+        ]);
+        if (cancelled) return;
+
+        setBookingAmount(settings.bookingAmount);
+        setPlatformFee(settings.platformFee);
+
+        if (!target) {
+          setLoadError('Quotation not found.');
+          return;
+        }
+
+        const resolvedGroup = target.group || (await fetchGroupById(target.group_id));
+        if (cancelled) return;
+
+        if (!resolvedGroup) {
+          setLoadError('Associated buying group not found.');
+          return;
+        }
+
+        setGroup(resolvedGroup);
+        setQuote(target);
+
+        if (target.is_active === false) {
+          setErrorMessage('This quotation is inactive and cannot be booked.');
+        } else if (!target.is_complete) {
+          setErrorMessage('Incomplete quotations missing insurance/RTO cannot be booked.');
+        } else if (isQuoteExpired(target.validity_date)) {
+          setErrorMessage('This quotation has expired and can no longer be locked.');
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : 'Unable to load booking checkout.');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
     }
+
     load();
+    return () => {
+      cancelled = true;
+    };
   }, [quoteId]);
 
+  const isQuoteBookable =
+    !!quote &&
+    !!group &&
+    quote.is_active !== false &&
+    quote.is_complete &&
+    !isQuoteExpired(quote.validity_date);
+
   const handleSimulatePayment = async (outcome: 'SUCCESS' | 'FAILED' | 'CANCELLED') => {
-    if (!quote || !group || !user || !profile || isProcessing) return;
+    if (!quote || !group || !user || !profile || isProcessing || !isQuoteBookable) return;
 
     setIsProcessing(true);
     setErrorMessage('');
@@ -66,7 +123,7 @@ export function BookingPaymentPage() {
     try {
       // 1. Call payment service createPayment
       const order = await createPayment({
-        bookingId: 'temp-' + Date.now(),
+        bookingId: `intent-${quote.id}-${Date.now()}`,
         amount: totalPayable,
         method: paymentMethod,
       });
@@ -81,7 +138,9 @@ export function BookingPaymentPage() {
           group,
           user.id,
           profile.full_name,
-          profile.phone || '+91 98765 43210'
+          profile.phone || '',
+          paymentMethod,
+          order.paymentId
         );
 
         if (res.success && res.booking) {
@@ -130,11 +189,13 @@ export function BookingPaymentPage() {
     );
   }
 
-  if (!quote || !group) {
+  if (loadError || !quote || !group) {
     return (
       <BuyerLayout>
         <div className="py-20 text-center space-y-3">
-          <h2 className="text-lg font-bold text-slate-900">Quotation not found</h2>
+          <h2 className="text-lg font-bold text-slate-900">
+            {loadError || 'Quotation not found'}
+          </h2>
           <Link to="/buyer/groups">
             <Button variant="secondary" size="sm">Back to My Groups</Button>
           </Link>
@@ -212,9 +273,11 @@ export function BookingPaymentPage() {
             <div className="pt-3 border-t-2 border-slate-200 flex justify-between items-center text-sm font-black text-slate-900">
               <div>
                 <span>Total Payable Now:</span>
-                <div className="text-[10px] text-emerald-700 font-semibold uppercase">
-                  (Below Platform ₹10,000 Cap)
-                </div>
+                {totalPayable <= 10000 && (
+                  <div className="text-[10px] text-emerald-700 font-semibold uppercase">
+                    (Below Platform ₹10,000 Cap)
+                  </div>
+                )}
               </div>
               <span className="text-lg text-brand-700">{formatINR(totalPayable)}</span>
             </div>
@@ -231,7 +294,7 @@ export function BookingPaymentPage() {
               </div>
               <div className="flex justify-between text-slate-500">
                 <span>Balance Payable at Showroom Delivery:</span>
-                <strong>{formatINR(quote.on_road_price - bookingAmount)}</strong>
+                <strong>{formatINR(Math.max(0, quote.on_road_price - bookingAmount))}</strong>
               </div>
             </div>
           </CardContent>
@@ -250,7 +313,7 @@ export function BookingPaymentPage() {
                 { id: 'NET_BANKING', label: 'Net Banking', icon: <Building className="w-4 h-4" /> },
               ]}
               activeTab={paymentMethod}
-              onChange={(tabId) => setPaymentMethod(tabId as any)}
+              onChange={(tabId) => setPaymentMethod(tabId as 'UPI' | 'CARD' | 'NET_BANKING')}
             />
 
             {paymentMethod === 'UPI' && (
@@ -298,6 +361,7 @@ export function BookingPaymentPage() {
                 size="md"
                 onClick={() => handleSimulatePayment('SUCCESS')}
                 isLoading={isProcessing}
+                disabled={!isQuoteBookable}
                 leftIcon={<CheckCircle2 className="w-4 h-4" />}
                 className="w-full text-xs font-bold"
               >
@@ -311,6 +375,7 @@ export function BookingPaymentPage() {
                 size="md"
                 onClick={() => handleSimulatePayment('FAILED')}
                 isLoading={isProcessing}
+                disabled={!isQuoteBookable}
                 leftIcon={<XCircle className="w-4 h-4" />}
                 className="w-full text-xs font-bold"
               >
@@ -324,6 +389,7 @@ export function BookingPaymentPage() {
                 size="md"
                 onClick={() => handleSimulatePayment('CANCELLED')}
                 isLoading={isProcessing}
+                disabled={!isQuoteBookable}
                 className="w-full text-xs font-bold text-slate-700"
               >
                 Simulate Cancel

@@ -4,8 +4,16 @@ import { BuyerLayout } from '@/components/layout/BuyerLayout';
 import { Button, Badge, Card, Modal } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/Toast';
-import { fetchGroupsForDistrict, joinGroup } from '@/lib/groupService';
-import { fetchDistricts } from '@/lib/catalogService';
+import {
+  fetchGroupsForDistrict,
+  fetchBuyerJoinedGroups,
+  joinGroup,
+} from '@/lib/groupService';
+import {
+  fetchDistricts,
+  fetchPlatformSettings,
+  DEFAULT_PLATFORM_SETTINGS,
+} from '@/lib/catalogService';
 import { formatINR, calculateDaysUntilVisible } from '@/lib/formatters';
 import { Group, District } from '@/types';
 import {
@@ -17,6 +25,7 @@ import {
   ShieldCheck,
   AlertCircle,
   PlusCircle,
+  CheckCircle2,
 } from 'lucide-react';
 
 export function FindGroupsPage() {
@@ -25,23 +34,39 @@ export function FindGroupsPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const filterVariantId = searchParams.get('variantId');
+  const paramDistrictId = searchParams.get('districtId');
+  const inviteGroupId = searchParams.get('inviteGroup');
 
   const [districts, setDistricts] = useState<District[]>([]);
-  const buyerDistrictId = profile?.district_id || 'd1111111-1111-1111-1111-111111111101';
-  const [selectedDistrictId, setSelectedDistrictId] = useState<string>(buyerDistrictId);
+  const homeDistrictId = profile?.district_id || 'd1111111-1111-1111-1111-111111111101';
+  const [selectedDistrictId, setSelectedDistrictId] = useState<string>(
+    paramDistrictId || homeDistrictId
+  );
 
   useEffect(() => {
-    if (profile?.district_id) {
+    if (paramDistrictId) {
+      setSelectedDistrictId(paramDistrictId);
+    } else if (profile?.district_id) {
       setSelectedDistrictId(profile.district_id);
     }
-  }, [profile?.district_id]);
+  }, [paramDistrictId, profile?.district_id]);
 
   const currentDistrict =
     districts.find((d) => d.id === selectedDistrictId) ||
     districts[0] ||
     { id: selectedDistrictId, name: 'Selected District', state: '' };
+  const isHomeDistrict = !profile?.district_id || selectedDistrictId === profile.district_id;
 
   const [groups, setGroups] = useState<Group[]>([]);
+  const [joinedGroupIds, setJoinedGroupIds] = useState<Set<string>>(new Set());
+  const [bookedGroupIds, setBookedGroupIds] = useState<Set<string>>(new Set());
+  const [visibilityDays, setVisibilityDays] = useState<number>(
+    DEFAULT_PLATFORM_SETTINGS.groupVisibilityDaysFor2Members
+  );
+  const [visibilityThreshold, setVisibilityThreshold] = useState<number>(
+    DEFAULT_PLATFORM_SETTINGS.visibilityMemberThreshold
+  );
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Join confirmation modal state
@@ -52,26 +77,69 @@ export function FindGroupsPage() {
     fetchDistricts()
       .then(setDistricts)
       .catch((err) => console.error('Failed to load districts:', err));
+    fetchPlatformSettings()
+      .then((s) => {
+        setVisibilityDays(s.groupVisibilityDaysFor2Members);
+        setVisibilityThreshold(s.visibilityMemberThreshold);
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
     async function load() {
       if (!selectedDistrictId) return;
       setIsLoading(true);
+      setLoadError(null);
       try {
-        const data = await fetchGroupsForDistrict(selectedDistrictId);
-        if (filterVariantId) {
-          setGroups(data.filter((g) => g.variant_id === filterVariantId));
-        } else {
-          setGroups(data);
+        const [data, joinedList] = await Promise.all([
+          fetchGroupsForDistrict(selectedDistrictId),
+          user ? fetchBuyerJoinedGroups(user.id) : Promise.resolve([]),
+        ]);
+
+        if (cancelled) return;
+
+        const filtered = filterVariantId
+          ? data.filter((g) => g.variant_id === filterVariantId)
+          : data;
+        setGroups(filtered);
+
+        const activeSet = new Set<string>();
+        const bookedSet = new Set<string>();
+        for (const jg of joinedList) {
+          if (jg.membership_status === 'BOOKED') {
+            bookedSet.add(jg.id);
+          } else {
+            activeSet.add(jg.id);
+          }
+        }
+        setJoinedGroupIds(activeSet);
+        setBookedGroupIds(bookedSet);
+
+        if (inviteGroupId) {
+          const matchedInvite = filtered.find((g) => g.id === inviteGroupId);
+          if (matchedInvite && !activeSet.has(matchedInvite.id) && !bookedSet.has(matchedInvite.id)) {
+            setSelectedGroupToJoin(matchedInvite);
+          }
         }
       } catch (err) {
-        console.error('Failed to load groups for district:', err);
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : 'Unable to load groups for this district.');
+          setGroups([]);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
       }
-      setIsLoading(false);
     }
+
     load();
-  }, [selectedDistrictId, filterVariantId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDistrictId, filterVariantId, inviteGroupId, user]);
 
   const handleConfirmJoin = async () => {
     if (!selectedGroupToJoin || !user || !profile) return;
@@ -138,6 +206,33 @@ export function FindGroupsPage() {
           </div>
         </div>
 
+        {!isHomeDistrict && (
+          <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 flex flex-wrap items-center justify-between gap-3 text-xs text-amber-900">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>
+                You are previewing another district. AutoGroup membership and joining are restricted to your registered home district.
+              </span>
+            </div>
+            {profile?.district_id && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setSelectedDistrictId(profile.district_id as string)}
+              >
+                Switch to My District
+              </Button>
+            )}
+          </div>
+        )}
+
+        {loadError && (
+          <div className="p-4 rounded-xl bg-red-50 border border-red-200 flex items-center gap-2.5 text-xs text-red-800">
+            <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+            <span>{loadError}</span>
+          </div>
+        )}
+
         {/* Group Listing */}
         {isLoading ? (
           <div className="py-16 text-center text-slate-400">Loading district groups...</div>
@@ -151,18 +246,18 @@ export function FindGroupsPage() {
               Be the first to start a group for your desired car model and invite friends or local buyers to join.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-3">
-              <Link to="/buyer/groups/create">
+              <Link to={filterVariantId ? `/buyer/groups/create?variantId=${filterVariantId}` : '/buyer/groups/create'}>
                 <Button variant="primary" size="md" leftIcon={<PlusCircle className="w-4 h-4" />}>
                   Start a New Group in {currentDistrict.name}
                 </Button>
               </Link>
-              {selectedDistrictId !== 'd1111111-1111-1111-1111-111111111101' && (
+              {profile?.district_id && selectedDistrictId !== profile.district_id && (
                 <Button
                   variant="secondary"
                   size="md"
-                  onClick={() => setSelectedDistrictId('d1111111-1111-1111-1111-111111111101')}
+                  onClick={() => setSelectedDistrictId(profile.district_id as string)}
                 >
-                  View Bengaluru Urban Groups
+                  Back to My Home District
                 </Button>
               )}
             </div>
@@ -170,9 +265,11 @@ export function FindGroupsPage() {
         ) : (
           <div className="grid grid-cols-1 gap-4">
             {groups.map((group) => {
-              const activeCount = group.member_count || 1;
+              const activeCount = group.member_count ?? 0;
               const isTargetReached = activeCount >= (group.target_members || 10);
-              const daysInfo = calculateDaysUntilVisible(group.created_at, 20);
+              const daysInfo = calculateDaysUntilVisible(group.created_at, visibilityDays);
+              const isAlreadyMember = joinedGroupIds.has(group.id);
+              const isAlreadyBooked = bookedGroupIds.has(group.id);
 
               return (
                 <Card key={group.id} className="p-6">
@@ -185,11 +282,20 @@ export function FindGroupsPage() {
                         <h3 className="text-lg font-bold text-slate-900">
                           {group.variant?.model?.name} — {group.variant?.name}
                         </h3>
-                        {/* Milestone Badge: "Strong group" */}
                         {isTargetReached && (
                           <Badge variant="milestone" size="sm">
                             <Sparkles className="w-3 h-3 text-indigo-600 mr-1" />
                             Strong Group ({activeCount}/{group.target_members})
+                          </Badge>
+                        )}
+                        {isAlreadyMember && (
+                          <Badge variant="success" size="sm">
+                            <CheckCircle2 className="w-3 h-3 mr-1" /> Member
+                          </Badge>
+                        )}
+                        {isAlreadyBooked && (
+                          <Badge variant="brand" size="sm">
+                            Booked
                           </Badge>
                         )}
                       </div>
@@ -197,7 +303,7 @@ export function FindGroupsPage() {
                       <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
                         <span className="flex items-center gap-1 font-semibold text-slate-800">
                           <Users className="w-4 h-4 text-brand-600" />
-                          {activeCount} Active Member{activeCount > 1 ? 's' : ''}
+                          {activeCount} Active Member{activeCount === 1 ? '' : 's'}
                         </span>
                         <span>•</span>
                         <span>
@@ -212,9 +318,11 @@ export function FindGroupsPage() {
                         </span>
                       </div>
 
-                      {/* Visibility countdown badge if < 3 members */}
+                      {/* Visibility countdown badge */}
                       <div className="pt-2">
-                        {activeCount >= 3 || (activeCount === 2 && daysInfo.isVisible) ? (
+                        {group.is_visible_to_dealers ||
+                        activeCount >= visibilityThreshold ||
+                        (activeCount === 2 && daysInfo.isVisible) ? (
                           <div className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-md border border-emerald-200">
                             <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
                             Visible to Authorized Dealerships for Quotations
@@ -225,11 +333,11 @@ export function FindGroupsPage() {
                             {activeCount === 2 ? (
                               <span>
                                 Becomes visible to dealers in{' '}
-                                <strong>{daysInfo.daysRemaining} days</strong> (or immediately at 3 members)
+                                <strong>{daysInfo.daysRemaining} days</strong> (or immediately at {visibilityThreshold} members)
                               </span>
                             ) : (
                               <span>
-                                Becomes visible to dealers at 3 members, or after 20 days with 2 members.
+                                Becomes visible to dealers at {visibilityThreshold} members, or after {visibilityDays} days with 2 members.
                               </span>
                             )}
                           </div>
@@ -244,14 +352,16 @@ export function FindGroupsPage() {
                           View Group
                         </Button>
                       </Link>
-                      <Button
-                        variant="primary"
-                        size="md"
-                        onClick={() => setSelectedGroupToJoin(group)}
-                        rightIcon={<ArrowRight className="w-4 h-4" />}
-                      >
-                        Join Group
-                      </Button>
+                      {!isAlreadyMember && !isAlreadyBooked && isHomeDistrict && (
+                        <Button
+                          variant="primary"
+                          size="md"
+                          onClick={() => setSelectedGroupToJoin(group)}
+                          rightIcon={<ArrowRight className="w-4 h-4" />}
+                        >
+                          Join Group
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </Card>
@@ -297,7 +407,7 @@ export function FindGroupsPage() {
                   District: {currentDistrict.name} ({currentDistrict.state})
                 </div>
                 <div className="text-slate-600">
-                  Current Members: {selectedGroupToJoin.member_count || 1}
+                  Current Members: {selectedGroupToJoin.member_count ?? 0}
                 </div>
               </div>
 

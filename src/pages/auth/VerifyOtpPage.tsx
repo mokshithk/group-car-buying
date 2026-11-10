@@ -46,13 +46,33 @@ export function VerifyOtpPage() {
           </Link>
         </div>
 
-        <OtpVerification
-          email={email}
-          type={typeParam}
-          title="Enter 6-Digit Verification Code"
-          onSuccess={handleSuccess}
-          onChangeEmail={() => navigate('/register')}
-        />
+        {!email ? (
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 text-center space-y-3">
+            <h2 className="text-base font-bold text-slate-900">No Email Specified</h2>
+            <p className="text-xs text-slate-500">
+              Please sign in or start registration so we know which email address to verify.
+            </p>
+            <div className="flex justify-center gap-3 pt-2">
+              <Link to="/login" className="text-xs font-semibold text-brand-600 hover:underline">
+                Back to Sign In
+              </Link>
+              <Link to="/register" className="text-xs font-semibold text-slate-700 hover:underline">
+                Create Account
+              </Link>
+            </div>
+          </div>
+        ) : (
+          <OtpVerification
+            email={email}
+            type={typeParam}
+            provider="supabase_otp"
+            allowCreateUser={false}
+            title="Enter 6-Digit Verification Code"
+            description={`Enter the 6-digit email verification code sent to ${email} to activate your account.`}
+            onSuccess={handleSuccess}
+            onChangeEmail={() => navigate('/login')}
+          />
+        )}
       </div>
     </div>
   );

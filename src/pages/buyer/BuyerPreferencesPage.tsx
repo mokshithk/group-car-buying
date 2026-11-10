@@ -4,12 +4,11 @@ import { Button, Select, Card, CardHeader, CardTitle, CardDescription, CardConte
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/Toast';
 import { getBuyerPreferences, saveBuyerPreferences } from '@/lib/groupService';
-import { fetchDistricts } from '@/lib/catalogService';
+import { fetchDistricts, fetchManufacturers } from '@/lib/catalogService';
 import { District } from '@/types';
 import { formatINR } from '@/lib/formatters';
 import { Sliders, Save, Check } from 'lucide-react';
 
-const AVAILABLE_BRANDS = ['Tata Motors', 'Hyundai', 'Mahindra', 'Maruti Suzuki', 'Volkswagen', 'Toyota'];
 const AVAILABLE_FUELS = ['Petrol', 'Diesel', 'CNG', 'Electric', 'Hybrid'];
 
 export function BuyerPreferencesPage() {
@@ -17,33 +16,47 @@ export function BuyerPreferencesPage() {
   const { toast } = useToast();
 
   const [districts, setDistricts] = useState<District[]>([]);
-  const [preferredBrands, setPreferredBrands] = useState<string[]>(['Tata Motors', 'Hyundai']);
+  const [availableBrands, setAvailableBrands] = useState<string[]>([]);
+  const [preferredBrands, setPreferredBrands] = useState<string[]>([]);
   const [preferredFuels, setPreferredFuels] = useState<string[]>(['Petrol', 'Diesel']);
   const [budgetMax, setBudgetMax] = useState<number>(2000000);
-  const [districtId, setDistrictId] = useState(
-    profile?.district_id || ''
-  );
+  const [districtId, setDistrictId] = useState(profile?.district_id || '');
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    fetchDistricts()
-      .then((dList) => {
+    let cancelled = false;
+
+    Promise.all([
+      fetchDistricts(),
+      fetchManufacturers(),
+      user ? getBuyerPreferences(user.id) : Promise.resolve(null),
+    ])
+      .then(([dList, mList, prefs]) => {
+        if (cancelled) return;
         setDistricts(dList);
-        if (dList.length > 0 && !districtId) {
-          setDistrictId(profile?.district_id || dList[0].id);
+        setAvailableBrands(mList.map((m) => m.name));
+
+        if (prefs) {
+          if (prefs.preferred_brands) setPreferredBrands(prefs.preferred_brands);
+          if (prefs.preferred_fuel_types) setPreferredFuels(prefs.preferred_fuel_types);
+          if (prefs.budget_max) setBudgetMax(prefs.budget_max);
+          if (prefs.district_id) {
+            setDistrictId(prefs.district_id);
+          } else if (profile?.district_id) {
+            setDistrictId(profile.district_id);
+          } else if (dList.length > 0) {
+            setDistrictId(dList[0].id);
+          }
+        } else if (dList.length > 0) {
+          setDistrictId((prev) => prev || profile?.district_id || dList[0].id);
         }
       })
-      .catch((err) => console.error('Error fetching districts:', err));
+      .catch((err) => console.error('Error loading preferences:', err));
 
-    if (!user) return;
-    getBuyerPreferences(user.id).then((prefs) => {
-      if (prefs) {
-        if (prefs.preferred_brands) setPreferredBrands(prefs.preferred_brands);
-        if (prefs.preferred_fuel_types) setPreferredFuels(prefs.preferred_fuel_types);
-        if (prefs.budget_max) setBudgetMax(prefs.budget_max);
-        if (prefs.district_id) setDistrictId(prefs.district_id);
-      }
-    });
-  }, [user, profile?.district_id, districtId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [user, profile?.district_id]);
 
   const toggleBrand = (brand: string) => {
     if (preferredBrands.includes(brand)) {
@@ -63,20 +76,40 @@ export function BuyerPreferencesPage() {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!user || isSaving) return;
 
-    await saveBuyerPreferences(user.id, {
-      district_id: districtId,
-      preferred_brands: preferredBrands,
-      preferred_fuel_types: preferredFuels,
-      budget_max: budgetMax,
-    });
+    setIsSaving(true);
+    try {
+      const res = await saveBuyerPreferences(user.id, {
+        district_id: districtId,
+        preferred_brands: preferredBrands,
+        preferred_fuel_types: preferredFuels,
+        budget_max: budgetMax,
+      });
 
-    toast({
-      type: 'success',
-      title: 'Preferences Saved',
-      message: 'Your recommendations and dashboard tenders have been updated.',
-    });
+      if (!res.success) {
+        toast({
+          type: 'error',
+          title: 'Could Not Save Preferences',
+          message: res.error || 'Please try again.',
+        });
+        return;
+      }
+
+      toast({
+        type: 'success',
+        title: 'Preferences Saved',
+        message: 'Your buying preferences have been updated.',
+      });
+    } catch (err) {
+      toast({
+        type: 'error',
+        title: 'Could Not Save Preferences',
+        message: err instanceof Error ? err.message : 'Unable to save preferences.',
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -121,7 +154,7 @@ export function BuyerPreferencesPage() {
             </CardHeader>
             <CardContent>
               <div className="flex flex-wrap gap-2">
-                {AVAILABLE_BRANDS.map((brand) => {
+                {availableBrands.map((brand) => {
                   const isSelected = preferredBrands.includes(brand);
                   return (
                     <button
@@ -194,7 +227,13 @@ export function BuyerPreferencesPage() {
             </CardContent>
           </Card>
 
-          <Button type="submit" variant="primary" size="lg" leftIcon={<Save className="w-4 h-4" />}>
+          <Button
+            type="submit"
+            variant="primary"
+            size="lg"
+            isLoading={isSaving}
+            leftIcon={<Save className="w-4 h-4" />}
+          >
             Save Preferences
           </Button>
         </form>

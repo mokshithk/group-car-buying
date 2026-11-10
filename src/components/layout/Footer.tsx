@@ -1,9 +1,34 @@
+import { useState } from 'react';
 import { Car, ShieldCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { Modal, Button } from '@/components/ui';
+
+type PolicyKey = 'price-lock' | 'refund' | 'conduct' | 'privacy';
+
+const POLICY_DOCS: Record<PolicyKey, { title: string; body: string }> = {
+  'price-lock': {
+    title: 'Price Lock Guarantee Terms',
+    body: 'When a buyer pays the platform booking deposit and fee against an active, complete showroom quotation, the full itemized on-road price breakdown (ex-showroom, insurance, RTO/registration, discounts, and accessories) is recorded as an immutable price snapshot and honored until vehicle delivery.',
+  },
+  refund: {
+    title: 'Refund & Cancellation Policy',
+    body: 'Buyer-initiated cancellations retain the configured dealership retention percentage (default 5%) from the booking deposit and do not refund the platform convenience fee. Dealership-fault cancellations issue a 100% deposit refund plus platform fee refund (when enabled by platform policy), leaving 0% retained by the showroom.',
+  },
+  conduct: {
+    title: 'Dealer Code of Conduct',
+    body: 'Only KYC/GST-verified OEM dealerships may submit quotations. Dealers must include both insurance and registration charges for complete offers, honor all price-locked snapshots, and refrain from hidden charges. Violations trigger administrative warnings or dealership suspension.',
+  },
+  privacy: {
+    title: 'Privacy & Contact Redaction Policy',
+    body: 'Fellow buying group members only see redacted display names (e.g., Rahul S.). Buyer phone numbers and email addresses are never exposed to other buyers and are shared with a specific verified dealership only when you explicitly click "I\'m Interested" or "Book Now".',
+  },
+};
 
 export function Footer() {
+  const [activePolicy, setActivePolicy] = useState<PolicyKey | null>(null);
+
   return (
-    <footer className="border-t border-slate-200 bg-white pt-12 pb-16 text-slate-600">
+    <footer className="border-t border-slate-200 bg-white pt-12 pb-16 text-slate-600 print:hidden">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8 pb-10">
           {/* Brand & Purpose */}
@@ -21,7 +46,7 @@ export function Footer() {
             </p>
             <div className="flex items-center gap-2 text-xs font-medium text-emerald-800 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200/80 w-fit">
               <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>Transparent Price Locks & Verified Dealerships</span>
+              <span>Transparent Price Locks &amp; Verified Dealerships</span>
             </div>
           </div>
 
@@ -61,16 +86,40 @@ export function Footer() {
             </h4>
             <ul className="space-y-2 text-sm">
               <li>
-                <span className="text-slate-500">Price Lock Guarantee Terms</span>
+                <button
+                  type="button"
+                  onClick={() => setActivePolicy('price-lock')}
+                  className="text-slate-600 hover:text-brand-600 transition-colors text-left"
+                >
+                  Price Lock Guarantee Terms
+                </button>
               </li>
               <li>
-                <span className="text-slate-500">Refund & Cancellation Policy</span>
+                <button
+                  type="button"
+                  onClick={() => setActivePolicy('refund')}
+                  className="text-slate-600 hover:text-brand-600 transition-colors text-left"
+                >
+                  Refund &amp; Cancellation Policy
+                </button>
               </li>
               <li>
-                <span className="text-slate-500">Dealer Code of Conduct</span>
+                <button
+                  type="button"
+                  onClick={() => setActivePolicy('conduct')}
+                  className="text-slate-600 hover:text-brand-600 transition-colors text-left"
+                >
+                  Dealer Code of Conduct
+                </button>
               </li>
               <li>
-                <span className="text-slate-500">Privacy & Contact Redaction</span>
+                <button
+                  type="button"
+                  onClick={() => setActivePolicy('privacy')}
+                  className="text-slate-600 hover:text-brand-600 transition-colors text-left"
+                >
+                  Privacy &amp; Contact Redaction
+                </button>
               </li>
             </ul>
           </div>
@@ -91,6 +140,21 @@ export function Footer() {
           </div>
         </div>
       </div>
+
+      <Modal
+        isOpen={Boolean(activePolicy)}
+        onClose={() => setActivePolicy(null)}
+        title={activePolicy ? POLICY_DOCS[activePolicy].title : ''}
+        footer={
+          <Button variant="primary" size="sm" onClick={() => setActivePolicy(null)}>
+            Close
+          </Button>
+        }
+      >
+        <p className="text-sm text-slate-600 leading-relaxed">
+          {activePolicy ? POLICY_DOCS[activePolicy].body : ''}
+        </p>
+      </Modal>
     </footer>
   );
 }

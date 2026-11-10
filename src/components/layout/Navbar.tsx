@@ -5,10 +5,26 @@ import { Button } from '@/components/ui';
 import { Car, Menu, X, User, LogOut, LayoutDashboard, Bookmark, Compass } from 'lucide-react';
 
 export function Navbar() {
-  const { user, profile, logout } = useAuth();
+  const { user, profile, dealership, logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
+
+  const getDashboardPath = () => {
+    if (profile?.role === 'admin' || profile?.role === 'super_admin') {
+      return '/admin/dashboard';
+    }
+    if (profile?.role === 'dealer') {
+      if (dealership?.status === 'REJECTED' || dealership?.status === 'SUSPENDED') {
+        return '/dealer/status';
+      }
+      if (dealership?.status !== 'VERIFIED') {
+        return '/dealer/pending';
+      }
+      return '/dealer/dashboard';
+    }
+    return '/buyer/dashboard';
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -88,15 +104,7 @@ export function Navbar() {
         <div className="hidden md:flex items-center gap-3">
           {user && profile ? (
             <div className="flex items-center gap-3">
-              <Link
-                to={
-                  profile.role === 'admin' || profile.role === 'super_admin'
-                    ? '/admin/dashboard'
-                    : profile.role === 'dealer'
-                    ? '/dealer/dashboard'
-                    : '/buyer/dashboard'
-                }
-              >
+              <Link to={getDashboardPath()}>
                 <Button variant="secondary" size="sm" leftIcon={<LayoutDashboard className="w-4 h-4" />}>
                   {profile.role === 'admin' || profile.role === 'super_admin'
                     ? 'Admin Portal'
@@ -141,8 +149,8 @@ export function Navbar() {
 
         {/* Mobile Hamburger Button */}
         <div className="flex md:hidden items-center gap-2">
-          {user && (
-            <Link to={profile?.role === 'dealer' ? '/dealer/dashboard' : '/buyer/dashboard'}>
+          {user && profile && (
+            <Link to={getDashboardPath()} aria-label="Open portal dashboard">
               <button className="p-2 text-brand-600 rounded-lg hover:bg-brand-50">
                 <User className="w-5 h-5" />
               </button>
@@ -200,14 +208,19 @@ export function Navbar() {
             </>
           )}
           <div className="pt-3 border-t border-slate-100 flex flex-col gap-2">
-            {user ? (
+            {user && profile ? (
               <>
                 <Link
-                  to={profile?.role === 'dealer' ? '/dealer/dashboard' : '/buyer/dashboard'}
+                  to={getDashboardPath()}
                   onClick={() => setMobileMenuOpen(false)}
                 >
                   <Button variant="primary" size="md" className="w-full">
-                    Go to {profile?.role === 'dealer' ? 'Dealer Portal' : 'My Dashboard'}
+                    Go to{' '}
+                    {profile.role === 'admin' || profile.role === 'super_admin'
+                      ? 'Admin Portal'
+                      : profile.role === 'dealer'
+                      ? 'Dealer Portal'
+                      : 'My Dashboard'}
                   </Button>
                 </Link>
                 <Button variant="ghost" size="md" onClick={handleLogout} className="w-full text-rose-600">

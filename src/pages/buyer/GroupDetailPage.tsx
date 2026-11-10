@@ -4,7 +4,14 @@ import { BuyerLayout } from '@/components/layout/BuyerLayout';
 import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Modal } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/Toast';
-import { fetchGroupById, fetchGroupMembers, leaveGroup, joinGroup } from '@/lib/groupService';
+import {
+  fetchGroupById,
+  fetchGroupMembers,
+  fetchBuyerJoinedGroups,
+  leaveGroup,
+  joinGroup,
+} from '@/lib/groupService';
+import { fetchPlatformSettings, DEFAULT_PLATFORM_SETTINGS } from '@/lib/catalogService';
 import { formatINR, formatMemberName, calculateDaysUntilVisible, formatDate } from '@/lib/formatters';
 import { Group, GroupMember } from '@/types';
 import {
@@ -21,6 +28,7 @@ import {
   Compass,
   PlusCircle,
   HelpCircle,
+  AlertCircle,
 } from 'lucide-react';
 
 export function GroupDetailPage() {
@@ -31,27 +39,70 @@ export function GroupDetailPage() {
 
   const [group, setGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<GroupMember[]>([]);
+  const [hasBookedInGroup, setHasBookedInGroup] = useState(false);
+  const [visibilityDays, setVisibilityDays] = useState(
+    DEFAULT_PLATFORM_SETTINGS.groupVisibilityDaysFor2Members
+  );
+  const [visibilityThreshold, setVisibilityThreshold] = useState(
+    DEFAULT_PLATFORM_SETTINGS.visibilityMemberThreshold
+  );
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [copiedInvite, setCopiedInvite] = useState(false);
 
   // Leave confirmation modal
   const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
+  const [isRejoining, setIsRejoining] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+
     async function load() {
-      if (!id) return;
-      setIsLoading(true);
-      const g = await fetchGroupById(id);
-      if (g) {
-        setGroup(g);
-        const m = await fetchGroupMembers(g.id);
-        setMembers(m);
+      if (!id) {
+        setIsLoading(false);
+        return;
       }
-      setIsLoading(false);
+
+      setIsLoading(true);
+      setLoadError(null);
+      try {
+        const [g, settings, joinedGroups] = await Promise.all([
+          fetchGroupById(id),
+          fetchPlatformSettings(),
+          user ? fetchBuyerJoinedGroups(user.id) : Promise.resolve([]),
+        ]);
+        if (cancelled) return;
+
+        setVisibilityDays(settings.groupVisibilityDaysFor2Members);
+        setVisibilityThreshold(settings.visibilityMemberThreshold);
+
+        const joinedMatch = joinedGroups.find((jg) => jg.id === id);
+        setHasBookedInGroup(joinedMatch?.membership_status === 'BOOKED');
+
+        if (g) {
+          setGroup(g);
+          const m = await fetchGroupMembers(g.id);
+          if (!cancelled) {
+            setMembers(m);
+          }
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : 'Failed to load group details.');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
     }
+
     load();
-  }, [id]);
+    return () => {
+      cancelled = true;
+    };
+  }, [id, user]);
 
   if (isLoading) {
     return (
@@ -75,7 +126,7 @@ export function GroupDetailPage() {
               This buying group has concluded
             </h2>
             <p className="text-xs text-slate-500 mt-1">
-              The validity window has closed or the creator cancelled this tender before booking.
+              The validity window has closed or the tender was cancelled before booking.
             </p>
           </div>
 
@@ -96,11 +147,14 @@ export function GroupDetailPage() {
     );
   }
 
-  if (!group) {
+  if (loadError || !group) {
     return (
       <BuyerLayout>
         <div className="py-20 text-center space-y-3">
-          <h2 className="text-lg font-bold text-slate-900">Group not found</h2>
+          <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
+          <h2 className="text-lg font-bold text-slate-900">
+            {loadError || 'Group not found'}
+          </h2>
           <Link to="/buyer/groups/find">
             <Button variant="secondary" size="sm">Back to Find Groups</Button>
           </Link>
@@ -109,60 +163,98 @@ export function GroupDetailPage() {
     );
   }
 
-  const activeCount = group.member_count || members.length || 1;
+  const activeCount = group.member_count ?? members.filter((m) => m.status === 'ACTIVE').length;
   const isMember = members.some((m) => m.user_id === user?.id && m.status === 'ACTIVE');
-  const isCreator = members.some((m) => m.user_id === user?.id && m.is_creator && m.status === 'ACTIVE');
+  const isCreator =
+    members.some((m) => m.user_id === user?.id && m.is_creator && m.status === 'ACTIVE') ||
+    (isMember && group.created_by === user?.id);
+  const isOpenGroup = ['FORMING', 'OPEN_FOR_QUOTES', 'OFFERS_RECEIVED'].includes(group.status);
   const isStrongGroup = activeCount >= (group.target_members || 10);
-  const daysInfo = calculateDaysUntilVisible(group.created_at, 20);
-  const isVisibleToDealers = activeCount >= 3 || (activeCount === 2 && daysInfo.isVisible);
+  const daysInfo = calculateDaysUntilVisible(group.created_at, visibilityDays);
+  const isVisibleToDealers = Boolean(
+    group.is_visible_to_dealers ||
+      activeCount >= visibilityThreshold ||
+      (activeCount === 2 && daysInfo.isVisible)
+  );
 
-  const inviteUrl = `${window.location.origin}/buyer/groups/find?variantId=${group.variant_id}&inviteGroup=${group.id}`;
+  const inviteUrl = `${window.location.origin}/buyer/groups/find?variantId=${group.variant_id}&districtId=${group.district_id}&inviteGroup=${group.id}`;
 
-  const handleCopyInvite = () => {
-    navigator.clipboard.writeText(inviteUrl);
-    setCopiedInvite(true);
-    toast({
-      type: 'success',
-      title: 'Invite Link Copied!',
-      message: 'Share this link with interested buyers in your district.',
-    });
-    setTimeout(() => setCopiedInvite(false), 3000);
+  const handleCopyInvite = async () => {
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setCopiedInvite(true);
+      toast({
+        type: 'success',
+        title: 'Invite Link Copied!',
+        message: 'Share this link with interested buyers in your district.',
+      });
+      setTimeout(() => setCopiedInvite(false), 3000);
+    } catch {
+      toast({
+        type: 'info',
+        title: 'Copy Invite Link',
+        message: inviteUrl,
+      });
+    }
   };
 
   const handleLeaveGroup = async () => {
-    if (!user) return;
+    if (!user || isLeaving) return;
     setIsLeaving(true);
-    const res = await leaveGroup(group.id, user.id);
-    setIsLeaving(false);
-
-    if (res.success) {
+    try {
+      const res = await leaveGroup(group.id, user.id);
+      if (res.success) {
+        toast({
+          type: 'info',
+          title: 'You left the group',
+          message: 'You have been removed. You can rejoin at any time while the group remains open.',
+        });
+        setShowLeaveModal(false);
+        navigate('/buyer/groups');
+      } else {
+        toast({
+          type: 'error',
+          title: 'Could Not Leave Group',
+          message: res.error || 'Unable to leave group.',
+        });
+      }
+    } catch (err) {
       toast({
-        type: 'info',
-        title: 'You left the group',
-        message: 'You have been removed. You can rejoin at any time while the group remains open.',
+        type: 'error',
+        title: 'Could Not Leave Group',
+        message: err instanceof Error ? err.message : 'Unable to leave group.',
       });
-      setShowLeaveModal(false);
-      navigate('/buyer/groups');
+    } finally {
+      setIsLeaving(false);
     }
   };
 
   const handleRejoin = async () => {
-    if (!user || !profile) return;
-    const res = await joinGroup(group.id, user.id, profile.full_name);
-    if (res.success) {
-      toast({
-        type: 'success',
-        title: 'Rejoined Group',
-        message: 'You are now an active member again.',
-      });
-      const updatedMembers = await fetchGroupMembers(group.id);
-      setMembers(updatedMembers);
-    } else {
-      toast({
-        type: 'error',
-        title: 'Could not rejoin',
-        message: res.error,
-      });
+    if (!user || !profile || isRejoining) return;
+    setIsRejoining(true);
+    try {
+      const res = await joinGroup(group.id, user.id, profile.full_name);
+      if (res.success) {
+        toast({
+          type: 'success',
+          title: 'Joined Group',
+          message: 'You are now an active member of this group.',
+        });
+        const [updatedGroup, updatedMembers] = await Promise.all([
+          fetchGroupById(group.id),
+          fetchGroupMembers(group.id),
+        ]);
+        if (updatedGroup) setGroup(updatedGroup);
+        setMembers(updatedMembers);
+      } else {
+        toast({
+          type: 'error',
+          title: 'Could not join',
+          message: res.error || 'Unable to join group.',
+        });
+      }
+    } finally {
+      setIsRejoining(false);
     }
   };
 
@@ -235,7 +327,14 @@ export function GroupDetailPage() {
 
               {/* Waiting text / Countdown or Visibility Confirmation */}
               <div className="pt-2">
-                {isVisibleToDealers ? (
+                {group.status === 'COMPLETED' ? (
+                  <div className="p-3 rounded-xl bg-slate-100 border border-slate-200 flex items-center gap-2.5 text-xs text-slate-800 font-medium">
+                    <ShieldCheck className="w-4 h-4 text-slate-600 shrink-0" />
+                    <span>
+                      <strong>Group Completed:</strong> Bookings for this buying pool have concluded.
+                    </span>
+                  </div>
+                ) : isVisibleToDealers ? (
                   <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center gap-2.5 text-xs text-emerald-900 font-medium">
                     <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
                     <span>
@@ -252,10 +351,12 @@ export function GroupDetailPage() {
                       {activeCount === 2 ? (
                         <>
                           This group has 2 members. It automatically becomes visible to dealers in{' '}
-                          <strong>{daysInfo.daysRemaining} days</strong>, or immediately upon a 3rd member joining.
+                          <strong>{daysInfo.daysRemaining} days</strong>, or immediately upon a {visibilityThreshold}rd member joining.
                         </>
                       ) : (
-                        <>Becomes visible to dealers at 3 members, or after 20 days with 2 members.</>
+                        <>
+                          Becomes visible to dealers at {visibilityThreshold} members, or after {visibilityDays} days with 2 members.
+                        </>
                       )}
                     </p>
                   </div>
@@ -271,17 +372,30 @@ export function GroupDetailPage() {
                 </Button>
               </Link>
 
-              {!isMember && (
-                <Button variant="secondary" size="lg" className="w-full" onClick={handleRejoin}>
-                  Rejoin This Group
+              {!isMember && !hasBookedInGroup && isOpenGroup && (
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  className="w-full"
+                  onClick={handleRejoin}
+                  isLoading={isRejoining}
+                >
+                  Join This Group
                 </Button>
+              )}
+              {hasBookedInGroup && (
+                <Link to="/buyer/bookings">
+                  <Button variant="outline" size="lg" className="w-full">
+                    View My Booking
+                  </Button>
+                </Link>
               )}
             </div>
           </div>
         </Card>
 
-        {/* PROMOTED INVITE LINK (Promoted while group has < 3 members) */}
-        {activeCount < 3 && (
+        {/* PROMOTED INVITE LINK (Promoted while group has < visibilityThreshold members) */}
+        {isOpenGroup && activeCount < visibilityThreshold && (
           <Card className="bg-gradient-to-r from-blue-500/10 via-brand-50 to-indigo-500/10 border-brand-200">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-2">
               <div className="space-y-1">
@@ -290,7 +404,7 @@ export function GroupDetailPage() {
                   <span>Invite Local Buyers & Unlock Quotes Faster</span>
                 </div>
                 <p className="text-xs text-slate-600 max-w-lg">
-                  Share your private group invite link. Once 3 buyers in {group.district?.name} join, dealers are immediately notified to submit quotations.
+                  Share your private group invite link. Once {visibilityThreshold} buyers in {group.district?.name} join, dealers are immediately notified to submit quotations.
                 </p>
               </div>
 
@@ -405,7 +519,9 @@ export function GroupDetailPage() {
                   <div className="relative flex items-start gap-3">
                     <div
                       className={`absolute -left-6 top-1 w-3.5 h-3.5 rounded-full ring-4 ring-white ${
-                        group.status === 'OPEN_FOR_QUOTES' || group.status === 'OFFERS_RECEIVED'
+                        group.status === 'OPEN_FOR_QUOTES' ||
+                        group.status === 'OFFERS_RECEIVED' ||
+                        group.status === 'COMPLETED'
                           ? 'bg-brand-600'
                           : 'bg-slate-300'
                       }`}

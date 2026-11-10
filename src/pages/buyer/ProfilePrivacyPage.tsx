@@ -11,7 +11,7 @@ import { District } from '@/types';
 import { Shield, User, Lock, Download, Trash2, AlertTriangle } from 'lucide-react';
 
 export function ProfilePrivacyPage() {
-  const { user, profile, refreshProfile, logout } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const { toast } = useToast();
 
   const [districts, setDistricts] = useState<District[]>([]);
@@ -21,15 +21,19 @@ export function ProfilePrivacyPage() {
   const [consentShareDetails, setConsentShareDetails] = useState(
     profile?.consent_share_details ?? true
   );
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
 
   useEffect(() => {
-    fetchDistricts().then((dList) => {
-      setDistricts(dList);
-      if (dList.length > 0 && !districtId) {
-        setDistrictId(profile?.district_id || dList[0].id);
-      }
-    }).catch(console.error);
-  }, [profile?.district_id, districtId]);
+    fetchDistricts()
+      .then((dList) => {
+        setDistricts(dList);
+        if (dList.length > 0) {
+          setDistrictId((prev) => prev || profile?.district_id || dList[0].id);
+        }
+      })
+      .catch(console.error);
+  }, [profile?.district_id]);
 
   useEffect(() => {
     if (profile) {
@@ -50,34 +54,51 @@ export function ProfilePrivacyPage() {
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!user || isSavingProfile) return;
 
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        full_name: fullName,
-        phone,
-        district_id: districtId,
-        consent_share_details: consentShareDetails,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', user.id);
-
-    if (error) {
-      toast({ type: 'error', title: 'Update Failed', message: error.message });
+    const cleanPhone = phone.trim();
+    if (!/^[+\d\s-]{10,16}$/.test(cleanPhone)) {
+      toast({
+        type: 'error',
+        title: 'Invalid Phone Number',
+        message: 'Enter a valid 10-digit mobile number (e.g. +91 9876543210).',
+      });
       return;
     }
 
-    await refreshProfile();
-    toast({
-      type: 'success',
-      title: 'Profile Updated',
-      message: 'Your personal details and contact consent have been updated.',
-    });
+    setIsSavingProfile(true);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          full_name: fullName.trim(),
+          phone: cleanPhone,
+          district_id: districtId || null,
+          consent_share_details: consentShareDetails,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', user.id);
+
+      if (error) {
+        toast({ type: 'error', title: 'Update Failed', message: error.message });
+        return;
+      }
+
+      await refreshProfile();
+      toast({
+        type: 'success',
+        title: 'Profile Updated',
+        message: 'Your personal details and contact consent have been updated.',
+      });
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isUpdatingPassword) return;
+
     if (newPassword.length < 8) {
       toast({ type: 'error', title: 'Password must be at least 8 characters' });
       return;
@@ -87,15 +108,20 @@ export function ProfilePrivacyPage() {
       return;
     }
 
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
-    if (error) {
-      toast({ type: 'error', title: 'Password Update Failed', message: error.message });
-      return;
-    }
+    setIsUpdatingPassword(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) {
+        toast({ type: 'error', title: 'Password Update Failed', message: error.message });
+        return;
+      }
 
-    toast({ type: 'success', title: 'Password Changed Successfully' });
-    setNewPassword('');
-    setConfirmPassword('');
+      toast({ type: 'success', title: 'Password Changed Successfully' });
+      setNewPassword('');
+      setConfirmPassword('');
+    } finally {
+      setIsUpdatingPassword(false);
+    }
   };
 
   // Download My Data (Section 3)
@@ -135,6 +161,7 @@ export function ProfilePrivacyPage() {
   };
 
   const handleDeleteAccount = async () => {
+    if (isDeleting) return;
     setIsDeleting(true);
     try {
       const { error } = await supabase.rpc('buyer_request_account_deletion', {
@@ -148,14 +175,12 @@ export function ProfilePrivacyPage() {
         message: 'Your account deletion request has been logged for compliance processing.',
       });
       await refreshProfile();
-    } catch {
-      setShowDeleteModal(false);
+    } catch (err) {
       toast({
-        type: 'info',
-        title: 'Account Deletion Queued',
-        message: 'Your session has been signed out.',
+        type: 'error',
+        title: 'Could Not Submit Request',
+        message: err instanceof Error ? err.message : 'Unable to request account deletion right now.',
       });
-      await logout();
     } finally {
       setIsDeleting(false);
     }
@@ -226,7 +251,7 @@ export function ProfilePrivacyPage() {
                 </label>
               </div>
 
-              <Button type="submit" variant="primary" size="md" className="mt-2">
+              <Button type="submit" variant="primary" size="md" className="mt-2" isLoading={isSavingProfile}>
                 Save Profile Changes
               </Button>
             </CardContent>
@@ -244,7 +269,7 @@ export function ProfilePrivacyPage() {
                 <Input
                   label="New Password"
                   type="password"
-                  placeholder="Min 6 characters"
+                  placeholder="Min 8 characters"
                   value={newPassword}
                   onChange={(e) => setNewPassword(e.target.value)}
                   leftIcon={<Lock className="w-4 h-4" />}
@@ -258,7 +283,7 @@ export function ProfilePrivacyPage() {
                   leftIcon={<Lock className="w-4 h-4" />}
                 />
               </div>
-              <Button type="submit" variant="secondary" size="md">
+              <Button type="submit" variant="secondary" size="md" isLoading={isUpdatingPassword}>
                 Update Password
               </Button>
             </CardContent>
@@ -294,14 +319,24 @@ export function ProfilePrivacyPage() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Button
-              variant="danger"
-              size="md"
-              onClick={() => setShowDeleteModal(true)}
-              leftIcon={<Trash2 className="w-4 h-4" />}
-            >
-              Delete My Account
-            </Button>
+            {profile?.deletion_status === 'PENDING' ? (
+              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 font-medium">
+                Your account deletion request is pending compliance review (submitted{' '}
+                {profile.deletion_requested_at
+                  ? new Date(profile.deletion_requested_at).toLocaleDateString()
+                  : 'recently'}
+                ).
+              </div>
+            ) : (
+              <Button
+                variant="danger"
+                size="md"
+                onClick={() => setShowDeleteModal(true)}
+                leftIcon={<Trash2 className="w-4 h-4" />}
+              >
+                Delete My Account
+              </Button>
+            )}
           </CardContent>
         </Card>
 

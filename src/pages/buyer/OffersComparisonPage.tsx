@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { BuyerLayout } from '@/components/layout/BuyerLayout';
 import { Button, Badge, Card, Modal } from '@/components/ui';
-import { fetchGroupById } from '@/lib/groupService';
+import { useAuth } from '@/context/AuthContext';
+import { fetchGroupById, fetchBuyerJoinedGroups } from '@/lib/groupService';
 import {
   fetchQuotationsForGroup,
   analyzeQuotations,
@@ -15,19 +16,24 @@ import {
   ArrowLeft,
   ShieldCheck,
   AlertTriangle,
+  AlertCircle,
   History,
   Download,
   Building2,
   Printer,
   ChevronRight,
+  FileText,
 } from 'lucide-react';
 
 export function OffersComparisonPage() {
   const { id } = useParams<{ id: string }>();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   const [group, setGroup] = useState<Group | null>(null);
   const [quotes, setQuotes] = useState<Quotation[]>([]);
+  const [membershipStatus, setMembershipStatus] = useState<'ACTIVE' | 'BOOKED' | 'NONE'>('NONE');
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Breakdown & Version history modal state
@@ -38,24 +44,64 @@ export function OffersComparisonPage() {
   const [quoteToPrint, setQuoteToPrint] = useState<Quotation | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+
     async function load() {
-      if (!id) return;
-      setIsLoading(true);
-      const g = await fetchGroupById(id);
-      if (g) {
-        setGroup(g);
-        const qList = await fetchQuotationsForGroup(g.id);
-        setQuotes(qList);
+      if (!id) {
+        setIsLoading(false);
+        return;
       }
-      setIsLoading(false);
+
+      setIsLoading(true);
+      setLoadError(null);
+      try {
+        const [g, joinedGroups] = await Promise.all([
+          fetchGroupById(id),
+          user ? fetchBuyerJoinedGroups(user.id) : Promise.resolve([]),
+        ]);
+        if (cancelled) return;
+
+        const match = joinedGroups.find((jg) => jg.id === id);
+        if (match?.membership_status === 'BOOKED') {
+          setMembershipStatus('BOOKED');
+        } else if (match) {
+          setMembershipStatus('ACTIVE');
+        } else {
+          setMembershipStatus('NONE');
+        }
+
+        if (g) {
+          setGroup(g);
+          const qList = await fetchQuotationsForGroup(g.id);
+          if (!cancelled) {
+            setQuotes(qList);
+          }
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : 'Unable to load quotations.');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
     }
+
     load();
-  }, [id]);
+    return () => {
+      cancelled = true;
+    };
+  }, [id, user]);
 
   const handleOpenBreakdown = async (q: Quotation) => {
     setSelectedQuoteForBreakdown(q);
-    const versions = await fetchPriceHistory(q.id);
-    setQuoteVersions(versions);
+    try {
+      const versions = await fetchPriceHistory(q.id);
+      setQuoteVersions(versions);
+    } catch {
+      setQuoteVersions(q.quotation_versions || []);
+    }
   };
 
   const handlePrintQuote = (q: Quotation) => {
@@ -74,11 +120,14 @@ export function OffersComparisonPage() {
     );
   }
 
-  if (!group) {
+  if (loadError || !group) {
     return (
       <BuyerLayout>
         <div className="py-20 text-center space-y-3">
-          <h2 className="text-lg font-bold text-slate-900">Group not found</h2>
+          <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
+          <h2 className="text-lg font-bold text-slate-900">
+            {loadError || 'Group not found'}
+          </h2>
           <Link to="/buyer/groups">
             <Button variant="secondary" size="sm">Back to My Groups</Button>
           </Link>
@@ -86,6 +135,9 @@ export function OffersComparisonPage() {
       </BuyerLayout>
     );
   }
+
+  const isGroupOpen = ['FORMING', 'OPEN_FOR_QUOTES', 'OFFERS_RECEIVED'].includes(group.status);
+  const canTransactOnGroup = isGroupOpen && membershipStatus === 'ACTIVE';
 
   const {
     lowestPriceQuote,
@@ -120,8 +172,26 @@ export function OffersComparisonPage() {
           </div>
         </div>
 
+        {membershipStatus === 'BOOKED' && (
+          <div className="p-3.5 rounded-xl bg-indigo-50 border border-indigo-200 flex items-center justify-between gap-3 text-xs text-indigo-900">
+            <span>You already hold a locked booking from this buying group.</span>
+            <Link to="/buyer/bookings">
+              <Button variant="secondary" size="sm">View My Booking</Button>
+            </Link>
+          </div>
+        )}
+
+        {membershipStatus === 'NONE' && isGroupOpen && (
+          <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 flex items-center justify-between gap-3 text-xs text-amber-900">
+            <span>Join this group on the overview page before expressing showroom interest or booking.</span>
+            <Link to={`/buyer/groups/${group.id}`}>
+              <Button variant="secondary" size="sm">Go to Group Overview</Button>
+            </Link>
+          </div>
+        )}
+
         {/* SAVINGS HIGHLIGHT CARD (Strictly between complete, valid quotes) */}
-        {lowestPriceQuote && maxSavings > 0 && (
+        {lowestPriceQuote && !isQuoteExpired(lowestPriceQuote.validity_date) && maxSavings > 0 && (
           <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/10 via-emerald-50 to-teal-500/10 border border-emerald-300/80 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div className="flex items-start gap-3">
               <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
@@ -140,14 +210,16 @@ export function OffersComparisonPage() {
               </div>
             </div>
 
-            <Button
-              variant="success"
-              size="sm"
-              onClick={() => navigate(`/buyer/quote/${lowestPriceQuote.id}/book`)}
-              className="shrink-0"
-            >
-              Book Best On-Road Price
-            </Button>
+            {canTransactOnGroup && (
+              <Button
+                variant="success"
+                size="sm"
+                onClick={() => navigate(`/buyer/quote/${lowestPriceQuote.id}/book`)}
+                className="shrink-0"
+              >
+                Book Best On-Road Price
+              </Button>
+            )}
           </div>
         )}
 
@@ -160,6 +232,17 @@ export function OffersComparisonPage() {
             </div>
           </div>
         )}
+
+        {quotes.length === 0 ? (
+          <Card className="p-12 text-center space-y-3">
+            <FileText className="w-10 h-10 text-slate-300 mx-auto" />
+            <h3 className="text-base font-bold text-slate-800">No active quotations yet</h3>
+            <p className="text-xs text-slate-500 max-w-md mx-auto">
+              Once authorized district dealers submit complete on-road quotations for this group, they will appear here side by side.
+            </p>
+          </Card>
+        ) : (
+        <>
 
         {/* DESKTOP COMPARISON TABLE */}
         <div className="hidden lg:block">
@@ -262,7 +345,7 @@ export function OffersComparisonPage() {
                             <Button
                               variant="outline"
                               size="sm"
-                              disabled={expired}
+                              disabled={expired || !q.is_complete || !canTransactOnGroup}
                               onClick={() => navigate(`/buyer/quote/${q.id}/interested`)}
                             >
                               I'm Interested
@@ -272,7 +355,7 @@ export function OffersComparisonPage() {
                             <Button
                               variant="primary"
                               size="sm"
-                              disabled={expired}
+                              disabled={expired || !q.is_complete || !canTransactOnGroup}
                               onClick={() => navigate(`/buyer/quote/${q.id}/book`)}
                             >
                               Book Now
@@ -367,7 +450,7 @@ export function OffersComparisonPage() {
                     <Button
                       variant="outline"
                       size="sm"
-                      disabled={expired}
+                      disabled={expired || !q.is_complete || !canTransactOnGroup}
                       onClick={() => navigate(`/buyer/quote/${q.id}/interested`)}
                     >
                       I'm Interested
@@ -375,7 +458,7 @@ export function OffersComparisonPage() {
                     <Button
                       variant="primary"
                       size="sm"
-                      disabled={expired}
+                      disabled={expired || !q.is_complete || !canTransactOnGroup}
                       onClick={() => navigate(`/buyer/quote/${q.id}/book`)}
                     >
                       Book Now
@@ -386,6 +469,8 @@ export function OffersComparisonPage() {
             );
           })}
         </div>
+        </>
+        )}
 
         {/* QUOTATION BREAKDOWN & PRICE HISTORY MODAL */}
         <Modal
@@ -459,32 +544,57 @@ export function OffersComparisonPage() {
                 </div>
               )}
 
+              {selectedQuoteForBreakdown.quote_items && selectedQuoteForBreakdown.quote_items.length > 0 && (
+                <div>
+                  <h4 className="font-bold text-slate-900 mb-1.5">Itemized Add-ons & Line Items:</h4>
+                  <div className="rounded-xl border border-slate-200 divide-y divide-slate-100 bg-white">
+                    {selectedQuoteForBreakdown.quote_items.map((item) => (
+                      <div key={item.id} className="px-3 py-2 flex items-center justify-between">
+                        <span className="text-slate-700">
+                          {item.item_name}
+                          {item.is_optional && (
+                            <span className="ml-1.5 text-[10px] text-slate-400">(Optional)</span>
+                          )}
+                        </span>
+                        <span className="font-semibold text-slate-900">{formatINR(item.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* Price History Timeline (Section 2: price history on quote updates) */}
               <div>
                 <h4 className="font-bold text-slate-900 mb-2 flex items-center gap-1.5">
                   <History className="w-4 h-4 text-brand-600" />
                   <span>Price Modification History</span>
                 </h4>
-                <div className="space-y-2">
-                  {quoteVersions.map((ver) => (
-                    <div
-                      key={ver.id}
-                      className="p-3 rounded-lg border border-slate-200 bg-white flex items-center justify-between"
-                    >
-                      <div>
-                        <div className="font-bold text-slate-900">
-                          Version {ver.version_number}: {formatINR(ver.on_road_price)}
+                {quoteVersions.length === 0 ? (
+                  <p className="text-slate-500 bg-slate-50 p-3 rounded-lg border border-slate-200">
+                    Original quotation submitted on {formatDateTime(selectedQuoteForBreakdown.created_at)}.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {quoteVersions.map((ver) => (
+                      <div
+                        key={ver.id}
+                        className="p-3 rounded-lg border border-slate-200 bg-white flex items-center justify-between"
+                      >
+                        <div>
+                          <div className="font-bold text-slate-900">
+                            Version {ver.version_number}: {formatINR(ver.on_road_price)}
+                          </div>
+                          <div className="text-[11px] text-slate-500">
+                            {formatDateTime(ver.changed_at)}
+                          </div>
                         </div>
-                        <div className="text-[11px] text-slate-500">
-                          {formatDateTime(ver.changed_at)}
-                        </div>
+                        <Badge variant="outline" size="sm">
+                          Discount: {formatINR(ver.price_breakdown.discounts)}
+                        </Badge>
                       </div>
-                      <Badge variant="outline" size="sm">
-                        Discount: {formatINR(ver.price_breakdown.discounts)}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}

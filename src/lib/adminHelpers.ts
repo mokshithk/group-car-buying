@@ -101,13 +101,25 @@ export function validatePlatformSetting(
     return { valid: false, error: 'Retention percentage must be between 0 and 100.' };
   }
 
-  if (
-    ['visibility_member_threshold', 'default_group_target', 'quote_validity_default_days', 'group_expiry_days_for_1_member'].includes(
-      key
-    ) &&
-    num < 1
-  ) {
-    return { valid: false, error: 'Value must be at least 1.' };
+  const INTEGER_SETTINGS = [
+    'visibility_member_threshold',
+    'group_visibility_days_for_2_members',
+    'group_expiry_days_for_1_member',
+    'default_group_target',
+    'quote_validity_default_days',
+    'dealer_delivery_fallback_days',
+    'suspicious_group_member_threshold',
+    'suspicious_group_window_minutes',
+    'quote_outlier_threshold_percent',
+  ];
+
+  if (INTEGER_SETTINGS.includes(key)) {
+    if (!Number.isInteger(num)) {
+      return { valid: false, error: 'Value must be a whole integer.' };
+    }
+    if (num < 1) {
+      return { valid: false, error: 'Value must be at least 1.' };
+    }
   }
 
   if (key === 'booking_amount') {
@@ -137,7 +149,14 @@ export function validatePlatformSetting(
  * Computes median price and identifies outlier quotations differing by >= thresholdPercent%.
  */
 export function detectQuoteOutliers<
-  T extends { id: string; group_id: string; on_road_price: number; is_complete?: boolean }
+  T extends {
+    id: string;
+    group_id: string;
+    on_road_price: number;
+    is_complete?: boolean;
+    is_active?: boolean;
+    validity_date?: string;
+  }
 >(
   quotes: T[],
   thresholdPercent: number = 15
@@ -147,7 +166,6 @@ export function detectQuoteOutliers<
     { isOutlier: boolean; medianPrice: number; deviationPercent: number; direction: 'HIGH' | 'LOW' | 'NORMAL' }
   >();
 
-  // Group quotes by group_id
   const byGroup = new Map<string, T[]>();
   for (const q of quotes) {
     const list = byGroup.get(q.group_id) || [];
@@ -155,9 +173,16 @@ export function detectQuoteOutliers<
     byGroup.set(q.group_id, list);
   }
 
+  const now = Date.now();
   for (const [, groupQuotes] of byGroup) {
     const eligible = groupQuotes
-      .filter((q) => (q.is_complete ?? true) && Number(q.on_road_price) > 0)
+      .filter(
+        (q) =>
+          (q.is_complete ?? true) &&
+          (q.is_active ?? true) &&
+          (!q.validity_date || new Date(q.validity_date).getTime() >= now) &&
+          Number(q.on_road_price) > 0
+      )
       .map((q) => Number(q.on_road_price))
       .sort((a, b) => a - b);
 
@@ -165,7 +190,7 @@ export function detectQuoteOutliers<
       for (const q of groupQuotes) {
         result.set(q.id, {
           isOutlier: false,
-          medianPrice: Number(q.on_road_price) || 0,
+          medianPrice: eligible[0] ?? (Number(q.on_road_price) || 0),
           deviationPercent: 0,
           direction: 'NORMAL',
         });
@@ -179,9 +204,13 @@ export function detectQuoteOutliers<
 
     for (const q of groupQuotes) {
       const price = Number(q.on_road_price) || 0;
+      const isEligible =
+        (q.is_complete ?? true) &&
+        (q.is_active ?? true) &&
+        (!q.validity_date || new Date(q.validity_date).getTime() >= now);
       const diff = median > 0 ? ((price - median) / median) * 100 : 0;
       const absDiff = Math.abs(diff);
-      const isOutlier = absDiff >= thresholdPercent;
+      const isOutlier = isEligible && absDiff >= thresholdPercent;
       result.set(q.id, {
         isOutlier,
         medianPrice: median,
@@ -192,6 +221,24 @@ export function detectQuoteOutliers<
   }
 
   return result;
+}
+
+/**
+ * Strips PostgREST .or() logic-tree special characters from user search input.
+ */
+export function sanitizePostgrestSearch(query: string): string {
+  return query.trim().replace(/[,()*\\]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Formats a Date or timestamp string into a YYYY-MM-DD key in local timezone.
+ */
+export function toLocalDateKey(input: Date | string): string {
+  const d = typeof input === 'string' ? new Date(input) : input;
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 /**

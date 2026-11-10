@@ -108,7 +108,7 @@ export interface Dealership {
   name: string;
   status: DealershipStatus;
   address: string;
-  district_id: string;
+  district_id?: string | null;
   contact_phone: string;
   contact_email: string;
   gst_number: string;
@@ -136,7 +136,7 @@ export interface Group {
   district_id: string;
   target_members: number;
   status: GroupStatus;
-  created_by: string;
+  created_by?: string | null;
   is_suspicious?: boolean;
   suspicious_reason?: string;
   admin_notes?: string;
@@ -150,6 +150,7 @@ export interface Group {
   bookings_so_far?: number;
   is_visible_to_dealers?: boolean;
   days_until_visible?: number;
+  membership_status?: GroupMemberStatus;
   creator?: Profile;
 }
 
@@ -186,6 +187,15 @@ export interface Quotation {
   dealership?: Dealership;
   group?: Group;
   quotation_versions?: QuotationVersion[];
+  quote_items?: QuoteItem[];
+}
+
+export interface QuoteItem {
+  id: string;
+  quotation_id: string;
+  item_name: string;
+  amount: number;
+  is_optional: boolean;
 }
 
 export interface QuotationVersion {
@@ -236,8 +246,8 @@ export interface PriceSnapshot {
 export interface Booking {
   id: string;
   booking_code: string;
-  group_id: string;
-  quotation_id: string;
+  group_id?: string | null;
+  quotation_id?: string | null;
   buyer_id: string;
   dealership_id: string;
   booking_amount: number;
@@ -256,6 +266,8 @@ export interface Booking {
   // Joined relations
   dealership?: Dealership;
   group?: Group;
+  quotation?: Quotation;
+  buyer?: Profile;
   payments?: Payment[];
   refunds?: Refund[];
 }
@@ -297,10 +309,12 @@ export interface Notification {
   message: string;
   type:
     | 'PRICE_CHANGE'
+    | 'NEW_GROUP'
     | 'NEW_ELIGIBLE_GROUP'
     | 'NEW_LEAD'
     | 'NEW_BOOKING'
     | 'BOOKING_CANCELLED'
+    | 'BUYER_CANCEL'
     | 'DEALER_APPROVAL'
     | 'ADMIN_ALERT'
     | 'SYSTEM'

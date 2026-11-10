@@ -53,8 +53,9 @@ export function DataTable<T>({
   onPageChange,
 }: DataTableProps<T>) {
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
-  const startItem = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
-  const endItem = Math.min(totalCount, page * pageSize);
+  const safePage = Math.min(Math.max(1, page), totalPages);
+  const startItem = totalCount === 0 ? 0 : (safePage - 1) * pageSize + 1;
+  const endItem = Math.min(totalCount, safePage * pageSize);
 
   if (error) {
     return (
@@ -188,20 +189,20 @@ export function DataTable<T>({
             <Button
               variant="secondary"
               size="sm"
-              disabled={page <= 1 || isLoading}
-              onClick={() => onPageChange(page - 1)}
+              disabled={safePage <= 1 || isLoading}
+              onClick={() => onPageChange(Math.max(1, safePage - 1))}
               leftIcon={<ChevronLeft className="w-3.5 h-3.5" />}
             >
               Prev
             </Button>
             <span className="px-2 font-mono text-[11px] font-semibold text-slate-700 tabular-nums">
-              Page {page} / {totalPages}
+              Page {safePage} / {totalPages}
             </span>
             <Button
               variant="secondary"
               size="sm"
-              disabled={page >= totalPages || isLoading}
-              onClick={() => onPageChange(page + 1)}
+              disabled={safePage >= totalPages || isLoading}
+              onClick={() => onPageChange(Math.min(totalPages, safePage + 1))}
               rightIcon={<ChevronRight className="w-3.5 h-3.5" />}
             >
               Next

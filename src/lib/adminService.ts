@@ -17,6 +17,7 @@ import {
   Notification,
 } from '@/types';
 import { DailySeriesPoint } from '@/components/admin/AdminCharts';
+import { toLocalDateKey } from '@/lib/adminHelpers';
 
 export interface DashboardMetrics {
   buyersCount: number;
@@ -110,15 +111,16 @@ export async function fetchAdminDashboardMetrics(): Promise<DashboardMetrics> {
 
   let paidBookingsCount = 0;
   let deliveredBookingsCount = 0;
-  let platformFeesCollected = 0;
+  let grossFeesCollected = 0;
   for (const b of bookingsData || []) {
     if (b.status === 'PAID') paidBookingsCount += 1;
     if (b.status === 'DELIVERED') deliveredBookingsCount += 1;
-    if (['PAID', 'DELIVERED', 'CANCELLED_BY_BUYER'].includes(b.status)) {
-      platformFeesCollected += Number(b.platform_fee || 0);
+    if (['PAID', 'DELIVERED', 'CANCELLED_BY_BUYER', 'CANCELLED_BY_DEALER', 'REFUNDED'].includes(b.status)) {
+      grossFeesCollected += Number(b.platform_fee || 0);
     }
   }
 
+  let refundedPlatformFees = 0;
   const refundsSummary = {
     totalRefunded: 0,
     buyerCancelCount: 0,
@@ -129,6 +131,7 @@ export async function fetchAdminDashboardMetrics(): Promise<DashboardMetrics> {
   };
   for (const r of refundsData || []) {
     refundsSummary.totalRefunded += Number(r.total_refunded || 0);
+    refundedPlatformFees += Number(r.platform_fee_refunded || 0);
     if (r.reason === 'BUYER_CANCEL') {
       refundsSummary.buyerCancelCount += 1;
       refundsSummary.buyerCancelAmount += Number(r.total_refunded || 0);
@@ -138,6 +141,7 @@ export async function fetchAdminDashboardMetrics(): Promise<DashboardMetrics> {
       refundsSummary.dealerFaultAmount += Number(r.total_refunded || 0);
     }
   }
+  const platformFeesCollected = Math.max(0, grossFeesCollected - refundedPlatformFees);
 
   // Resolve actor info for recent audit entries
   const actorIds = Array.from(
@@ -156,30 +160,35 @@ export async function fetchAdminDashboardMetrics(): Promise<DashboardMetrics> {
     actor: a.actor_id ? actorMap.get(a.actor_id) || null : null,
   }));
 
-  // Build exact 30-day series
+  // Build exact 30-day series using consistent local timezone day keys
   const dayBuckets = new Map<string, DailySeriesPoint>();
+  const nowDate = new Date();
   for (let offset = 29; offset >= 0; offset--) {
-    const d = new Date(Date.now() - offset * 86400 * 1000);
-    const iso = d.toISOString().slice(0, 10);
+    const d = new Date(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate() - offset);
+    const iso = toLocalDateKey(d);
     const label = d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
     dayBuckets.set(iso, { date: iso, label, signups: 0, groups: 0, bookings: 0 });
   }
 
   for (const p of profilesData || []) {
     if (p.created_at && p.created_at >= thirtyDaysAgo) {
-      const bucket = dayBuckets.get(p.created_at.slice(0, 10));
+      const bucket = dayBuckets.get(toLocalDateKey(p.created_at));
       if (bucket) bucket.signups += 1;
     }
   }
   for (const g of groupsData || []) {
     if (g.created_at && g.created_at >= thirtyDaysAgo) {
-      const bucket = dayBuckets.get(g.created_at.slice(0, 10));
+      const bucket = dayBuckets.get(toLocalDateKey(g.created_at));
       if (bucket) bucket.groups += 1;
     }
   }
   for (const b of bookingsData || []) {
-    if (b.created_at && b.created_at >= thirtyDaysAgo) {
-      const bucket = dayBuckets.get(b.created_at.slice(0, 10));
+    if (
+      b.created_at &&
+      b.created_at >= thirtyDaysAgo &&
+      ['PAID', 'DELIVERED', 'CANCELLED_BY_BUYER', 'CANCELLED_BY_DEALER', 'REFUNDED'].includes(b.status)
+    ) {
+      const bucket = dayBuckets.get(toLocalDateKey(b.created_at));
       if (bucket) bucket.bookings += 1;
     }
   }

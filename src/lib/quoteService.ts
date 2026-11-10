@@ -2,27 +2,66 @@ import { Quotation, QuotationVersion } from '@/types';
 import { supabase, isSupabaseConfigured } from './supabase';
 
 /**
- * Quote Service: Real Supabase implementation
- * Implements quotes, competitive multi-dealer comparisons, and price history versioning.
- * No mock arrays or in-memory fallbacks.
+ * Quote Service: Real Supabase implementation.
+ * Server triggers automatically log quotation_versions and advance group status
+ * to OFFERS_RECEIVED on quotation insert/update.
  */
 
-export async function fetchQuotationsForGroup(groupId: string): Promise<Quotation[]> {
+function sortVersionsDesc(versions?: QuotationVersion[]): QuotationVersion[] | undefined {
+  if (!versions) return versions;
+  return [...versions].sort((a, b) => Number(b.version_number) - Number(a.version_number));
+}
+
+export async function fetchQuotationsForGroup(
+  groupId: string,
+  options?: { includeInactive?: boolean }
+): Promise<Quotation[]> {
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase client is not configured.');
+  }
+
+  let query = supabase
+    .from('quotations')
+    .select('*, dealership:dealerships(*), quotation_versions(*), quote_items(*)')
+    .eq('group_id', groupId)
+    .order('on_road_price', { ascending: true });
+
+  if (!options?.includeInactive) {
+    query = query.eq('is_active', true);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    throw new Error(`Failed to load quotations for group: ${error.message}`);
+  }
+
+  return ((data || []) as Quotation[]).map((q) => ({
+    ...q,
+    quotation_versions: sortVersionsDesc(q.quotation_versions),
+  }));
+}
+
+export async function fetchDealerQuotations(dealershipId: string): Promise<Quotation[]> {
   if (!isSupabaseConfigured()) {
     throw new Error('Supabase client is not configured.');
   }
 
   const { data, error } = await supabase
     .from('quotations')
-    .select('*, dealership:dealerships(*), quotation_versions(*)')
-    .eq('group_id', groupId)
-    .order('on_road_price', { ascending: true });
+    .select(
+      '*, dealership:dealerships(*), quotation_versions(*), quote_items(*), group:groups(*, district:districts(*), variant:variants(*, model:models(*, manufacturer:manufacturers(*))))'
+    )
+    .eq('dealership_id', dealershipId)
+    .order('updated_at', { ascending: false });
 
   if (error) {
-    throw new Error(`Failed to load quotations for group: ${error.message}`);
+    throw new Error(`Failed to load dealership quotations: ${error.message}`);
   }
 
-  return (data || []) as Quotation[];
+  return ((data || []) as Quotation[]).map((q) => ({
+    ...q,
+    quotation_versions: sortVersionsDesc(q.quotation_versions),
+  }));
 }
 
 export async function fetchQuotationById(quotationId: string): Promise<Quotation | null> {
@@ -32,7 +71,9 @@ export async function fetchQuotationById(quotationId: string): Promise<Quotation
 
   const { data, error } = await supabase
     .from('quotations')
-    .select('*, dealership:dealerships(*), quotation_versions(*)')
+    .select(
+      '*, dealership:dealerships(*), quotation_versions(*), quote_items(*), group:groups(*, district:districts(*), variant:variants(*, model:models(*, manufacturer:manufacturers(*))))'
+    )
     .eq('id', quotationId)
     .maybeSingle();
 
@@ -40,11 +81,18 @@ export async function fetchQuotationById(quotationId: string): Promise<Quotation
     throw new Error(`Failed to load quotation: ${error.message}`);
   }
 
-  return (data as Quotation | null) ?? null;
+  if (!data) return null;
+  const quote = data as Quotation;
+  return {
+    ...quote,
+    quotation_versions: sortVersionsDesc(quote.quotation_versions),
+  };
 }
 
 export async function fetchPriceHistory(quotationId: string): Promise<QuotationVersion[]> {
-  if (!isSupabaseConfigured()) return [];
+  if (!isSupabaseConfigured()) {
+    throw new Error('Supabase client is not configured.');
+  }
 
   const { data, error } = await supabase
     .from('quotation_versions')
@@ -53,8 +101,7 @@ export async function fetchPriceHistory(quotationId: string): Promise<QuotationV
     .order('version_number', { ascending: false });
 
   if (error) {
-    console.error('Error fetching price history:', error);
-    return [];
+    throw new Error(`Failed to fetch price history: ${error.message}`);
   }
 
   return (data || []) as QuotationVersion[];
@@ -72,18 +119,47 @@ export async function submitQuotation(quoteData: {
   validityDate: string;
   terms: string;
   isComplete: boolean;
+  quoteItems?: Array<{ item_name: string; amount: number; is_optional: boolean }>;
 }): Promise<{ success: boolean; quotationId?: string; error?: string }> {
   if (!isSupabaseConfigured()) {
     throw new Error('Supabase client is not configured.');
   }
 
-  // 1. Check if existing quotation exists for this group and dealership
-  const { data: existing } = await supabase
+  if (quoteData.exShowroomPrice <= 0) {
+    return { success: false, error: 'Ex-showroom price must be greater than ₹0.' };
+  }
+  if (
+    quoteData.insurance < 0 ||
+    quoteData.registrationCharges < 0 ||
+    quoteData.discounts < 0 ||
+    quoteData.accessoriesExtras < 0
+  ) {
+    return { success: false, error: 'Pricing breakdown amounts cannot be negative.' };
+  }
+  if (quoteData.onRoadPrice < 0) {
+    return {
+      success: false,
+      error: 'Net on-road price cannot be negative. Reduce discounts or verify breakdown figures.',
+    };
+  }
+
+  const { data: existing, error: existErr } = await supabase
     .from('quotations')
-    .select('id, on_road_price')
+    .select('id, is_active')
     .eq('group_id', quoteData.groupId)
     .eq('dealership_id', quoteData.dealershipId)
     .maybeSingle();
+
+  if (existErr) {
+    return { success: false, error: existErr.message };
+  }
+
+  if (existing && existing.is_active === false) {
+    return {
+      success: false,
+      error: 'This quotation was deactivated by administration and cannot be edited.',
+    };
+  }
 
   const payload = {
     group_id: quoteData.groupId,
@@ -97,91 +173,63 @@ export async function submitQuotation(quoteData: {
     validity_date: quoteData.validityDate,
     terms: quoteData.terms,
     is_complete: quoteData.isComplete,
+    is_active: true,
     updated_at: new Date().toISOString(),
   };
 
   let quoteId = existing?.id;
 
   if (existing) {
-    // Update existing quotation
     const { error: updateErr } = await supabase
       .from('quotations')
       .update(payload)
       .eq('id', existing.id);
 
-    if (updateErr) return { success: false, error: updateErr.message };
-
-    // Record price history version if price or completeness changed
-    const { data: versions } = await supabase
-      .from('quotation_versions')
-      .select('version_number')
-      .eq('quotation_id', existing.id)
-      .order('version_number', { ascending: false })
-      .limit(1);
-
-    const nextVer = (versions?.[0]?.version_number || 1) + 1;
-
-    await supabase.from('quotation_versions').insert({
-      quotation_id: existing.id,
-      dealership_id: quoteData.dealershipId,
-      on_road_price: quoteData.onRoadPrice,
-      price_breakdown: {
-        ex_showroom_price: quoteData.exShowroomPrice,
-        insurance: quoteData.insurance,
-        registration_charges: quoteData.registrationCharges,
-        discounts: quoteData.discounts,
-        accessories_extras: quoteData.accessoriesExtras,
-      },
-      version_number: nextVer,
-    });
+    if (updateErr) {
+      return { success: false, error: updateErr.message };
+    }
   } else {
-    // Insert new quotation
     const { data: inserted, error: insertErr } = await supabase
       .from('quotations')
       .insert(payload)
-      .select()
+      .select('id')
       .single();
 
     if (insertErr || !inserted) {
-      return { success: false, error: insertErr?.message || 'Failed to submit quotation' };
+      return { success: false, error: insertErr?.message || 'Failed to submit quotation.' };
     }
     quoteId = inserted.id;
-
-    // Insert initial version 1
-    await supabase.from('quotation_versions').insert({
-      quotation_id: inserted.id,
-      dealership_id: quoteData.dealershipId,
-      on_road_price: quoteData.onRoadPrice,
-      price_breakdown: {
-        ex_showroom_price: quoteData.exShowroomPrice,
-        insurance: quoteData.insurance,
-        registration_charges: quoteData.registrationCharges,
-        discounts: quoteData.discounts,
-        accessories_extras: quoteData.accessoriesExtras,
-      },
-      version_number: 1,
-    });
   }
 
-  // Update group status to OFFERS_RECEIVED if it was OPEN_FOR_QUOTES
-  await supabase
-    .from('groups')
-    .update({ status: 'OFFERS_RECEIVED' })
-    .eq('id', quoteData.groupId)
-    .in('status', ['FORMING', 'OPEN_FOR_QUOTES']);
+  if (quoteId && quoteData.quoteItems) {
+    const cleanItems = quoteData.quoteItems
+      .map((item) => ({
+        quotation_id: quoteId,
+        item_name: item.item_name.trim(),
+        amount: Number(item.amount) || 0,
+        is_optional: Boolean(item.is_optional),
+      }))
+      .filter((item) => item.item_name.length > 0);
+
+    const { error: delItemsErr } = await supabase
+      .from('quote_items')
+      .delete()
+      .eq('quotation_id', quoteId);
+
+    if (!delItemsErr && cleanItems.length > 0) {
+      await supabase.from('quote_items').insert(cleanItems);
+    }
+  }
 
   return { success: true, quotationId: quoteId };
 }
 
 export function isQuoteExpired(validityDate: string): boolean {
-  return new Date(validityDate).getTime() < Date.now();
+  if (!validityDate) return true;
+  const ts = new Date(validityDate).getTime();
+  return Number.isNaN(ts) || ts < Date.now();
 }
 
-/**
- * Business Rule:
- * Incomplete quote check:
- * Quote missing insurance or registration (<= 0 or not provided) is flagged incomplete.
- */
 export function isQuoteComplete(quote: {
   insurance?: number | null;
   registrationCharges?: number | null;
@@ -194,59 +242,64 @@ export function isQuoteComplete(quote: {
   return insurance > 0 && registration > 0;
 }
 
-/**
- * Business Rule:
- * Incomplete quotes are flagged and EXCLUDED from "lowest price" and savings.
- * Expired quotes are greyed and disabled.
- * Competitor quote ranking: lowest complete on-road price first.
- */
-export function rankQuotes<T extends { id: string; on_road_price: number; is_complete: boolean; validity_date: string }>(
-  quotes: T[]
-) {
-  const validComplete = quotes
-    .filter((q) => q.is_complete && !isQuoteExpired(q.validity_date))
-    .sort((a, b) => a.on_road_price - b.on_road_price);
+export function rankQuotes<
+  T extends {
+    id: string;
+    on_road_price: number;
+    insurance?: number | null;
+    registration_charges?: number | null;
+    is_complete?: boolean;
+    is_active?: boolean;
+    validity_date: string;
+  },
+>(quotes: T[]) {
+  const validCompleteQuotes = quotes.filter(
+    (q) =>
+      (q.is_active ?? true) &&
+      (q.is_complete ?? isQuoteComplete(q)) &&
+      !isQuoteExpired(q.validity_date)
+  );
 
-  const lowestCompleteQuote = validComplete.length > 0 ? validComplete[0] : null;
+  const rankedCompleteQuotes = [...validCompleteQuotes].sort(
+    (a, b) => Number(a.on_road_price) - Number(b.on_road_price)
+  );
+
+  const lowestCompleteQuote = rankedCompleteQuotes[0] ?? null;
+  const isLowestPrice = (quoteId: string) =>
+    Boolean(lowestCompleteQuote && lowestCompleteQuote.id === quoteId);
 
   return {
-    rankedCompleteQuotes: validComplete,
+    rankedCompleteQuotes,
     lowestCompleteQuote,
-    isLowestPrice: (quoteId: string) => lowestCompleteQuote?.id === quoteId,
+    isLowestPrice,
   };
 }
 
-/**
- * Business Rule:
- * Incomplete quotes are flagged and EXCLUDED from "lowest price" and savings.
- * Expired quotes are greyed and disabled.
- * Savings only calculated between complete, valid quotes.
- */
-export function analyzeQuotations(quotes: Quotation[]) {
-  const validCompleteQuotes = quotes.filter(
-    (q) => q.is_complete && !isQuoteExpired(q.validity_date)
-  );
+export function analyzeQuotations<
+  T extends {
+    id: string;
+    on_road_price: number;
+    insurance?: number | null;
+    registration_charges?: number | null;
+    is_complete?: boolean;
+    is_active?: boolean;
+    validity_date: string;
+  },
+>(quotes: T[]) {
+  const { rankedCompleteQuotes, lowestCompleteQuote } = rankQuotes(quotes);
+  const hasIncompleteQuotes = quotes.some((q) => !(q.is_complete ?? isQuoteComplete(q)));
 
-  let lowestPriceQuote: Quotation | null = null;
-  let highestPriceQuote: Quotation | null = null;
-
-  if (validCompleteQuotes.length > 0) {
-    const sorted = [...validCompleteQuotes].sort((a, b) => a.on_road_price - b.on_road_price);
-    lowestPriceQuote = sorted[0];
-    highestPriceQuote = sorted[sorted.length - 1];
-  }
-
-  const maxSavings =
-    lowestPriceQuote && highestPriceQuote && highestPriceQuote !== lowestPriceQuote
-      ? highestPriceQuote.on_road_price - lowestPriceQuote.on_road_price
+  const lowestPrice = lowestCompleteQuote ? Number(lowestCompleteQuote.on_road_price) : 0;
+  const highestPrice =
+    rankedCompleteQuotes.length > 0
+      ? Number(rankedCompleteQuotes[rankedCompleteQuotes.length - 1].on_road_price)
       : 0;
+  const maxSavings = rankedCompleteQuotes.length > 1 ? Math.max(0, highestPrice - lowestPrice) : 0;
 
   return {
-    validCompleteQuotes,
-    lowestPriceQuote,
-    highestPriceQuote,
+    lowestPriceQuote: lowestCompleteQuote,
+    hasIncompleteQuotes,
     maxSavings,
-    hasIncompleteQuotes: quotes.some((q) => !q.is_complete),
-    hasExpiredQuotes: quotes.some((q) => isQuoteExpired(q.validity_date)),
+    rankedCompleteQuotes,
   };
 }
