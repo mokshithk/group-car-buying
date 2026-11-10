@@ -4,13 +4,13 @@
 
 - **Date of Verification**: `2026-11-10`
 - **Target Backend**: Remote Supabase project `hjqpprhljvwmcelgwznq` (`migrations 001`–`007` applied)
-- **Unit Tests**: **10 passed** (`tests/unit/business-rules.spec.ts`)
-- **Playwright E2E Tests**: **20 passed** (`13` in `tests/e2e.spec.ts` + `7` in `tests/admin.e2e.spec.ts`) — **30 total Playwright checks passed** (`0` failed, `0` skipped)
+- **Unit Tests**: **11 passed** (`tests/unit/business-rules.spec.ts`)
+- **Playwright E2E Tests**: **21 passed** (`14` in `tests/e2e.spec.ts` + `7` in `tests/admin.e2e.spec.ts`) — **32 total Playwright checks passed** (`0` failed, `0` skipped)
 - **Static Quality Gates**:
-  - `npm run typecheck`: `0` errors
+  - `npm run typecheck`: `0` errors (`src` and `api`)
   - `npm run lint`: `0` errors (`4` pre-existing warnings in non-admin files `Toast.tsx`, `AuthContext.tsx`, `DealerStatusPage.tsx`, `PendingApprovalPage.tsx`)
   - `npm run build`: clean Vite production build (`dist/index.html`, `1722` modules transformed)
-- **Database Schema & RLS Status**: `24` public tables with Row-Level Security (`RLS`) enabled, `24` admin/helper SQL functions and `65` RLS policies verified at migration `006` (plus `is_dealer_owner_of` replacing `3` recursive policies in `007`). Non-destructive SQL test suite (`supabase/tests/admin_rls_and_rules.sql`) passed remotely prior to `007_fix_dealer_users_rls_recursion.sql`; post-`007` authenticated queries and live admin RPCs were verified via live Supabase queries and the `30/30` Playwright suite.
+- **Database Schema & RLS Status**: `24` public tables with Row-Level Security (`RLS`) enabled, `24` admin/helper SQL functions and `65` RLS policies verified at migration `006` (plus `is_dealer_owner_of` replacing `3` recursive policies in `007`). Non-destructive SQL test suite (`supabase/tests/admin_rls_and_rules.sql`) passed remotely prior to `007_fix_dealer_users_rls_recursion.sql`; post-`007` authenticated queries and live admin RPCs were verified via live Supabase queries and the `32/32` Playwright suite.
 
 ---
 
@@ -18,7 +18,7 @@
 
 | Area / Module | Feature / Business Rule Verified | Verification Method | Status |
 | :--- | :--- | :--- | :--- |
-| **Auth & OTP UI Flow** | Buyer/dealer signup validation, OTP verification screen transitions, forgot-password OTP request & unregistered-email guard (`mailer_autoconfirm: true`) | `tests/e2e.spec.ts` (`#4`, `#5`, `#8`, `#11`, `#12`) | Passed |
+| **Auth & OTP UI Flow** | Buyer/dealer signup validation, OTP verification screen transitions, forgot-password fail-closed OTP request, OTP reset flow & unregistered-email guard (`mailer_autoconfirm: true`) | `tests/e2e.spec.ts` (`#4`, `#5`, `#8`, `#11`, `#12`, `#14`) | Passed |
 | **Admin RBAC** | `buyer`/`dealer` receive `403 Forbidden`, unauthenticated redirects to `/login`, regular `admin` sees read-only Settings and gets `403` on `/admin/admins` | `tests/admin.e2e.spec.ts` (`#1`, `#2`), `tests/e2e.spec.ts` (`#13`) | Passed |
 | **Admin Invites & Account Guard** | Super-admin invite creation, invite token validation security, Account password policy guard, token/digest generation | `tests/admin.e2e.spec.ts` (`#6`), `tests/unit/business-rules.spec.ts` (`#6`, `#10`) | Passed |
 | **Dealers Console & Buyers** | Dealership moderation lifecycle with re-authentication, Buyers directory rendering, non-recursive `dealer_users` RLS (`007`) | `tests/admin.e2e.spec.ts` (`#4`), Live Remote Query | Passed |
@@ -32,7 +32,7 @@
 
 ## 3. Test Suites Covered
 
-- **Pure Unit Suite (`tests/unit/business-rules.spec.ts`, `10` tests)**:
+- **Pure Unit Suite (`tests/unit/business-rules.spec.ts`, `11` tests)**:
   1. `formatINR` currency formatting (`0`, large numbers, negatives, decimals)
   2. Strict cancellation refund math
   3. Competitor quote ranking (lowest complete on-road price first, excluding incomplete quotes from badge)
@@ -43,8 +43,9 @@
   8. `detectQuoteOutliers` extreme high/low detection against median
   9. `buildCsvContent` CSV quoting and spreadsheet formula injection neutralization
   10. `generateInviteToken` (`48` hex chars) and `sha256Hex` (`64`-char digest)
-- **Core Platform E2E (`tests/e2e.spec.ts`, `13` tests)**:
-  Exercises public browsing, role chooser, buyer/dealer signup OTP screen transitions, forgot-password flow, dealer pending/status screens, login errors, and unauthenticated route guards (`admin` and buyer/dealer).
+  11. `sealToken` / `unsealToken` AES-256-GCM OTP challenge encryption, tamper rejection, and `safeCodeEquals` timing-safe comparison
+- **Core Platform E2E (`tests/e2e.spec.ts`, `14` tests)**:
+  Exercises public browsing, role chooser, buyer/dealer signup OTP screen transitions, forgot-password flow (including fail-closed `503` guard and OTP -> `/api/auth/reset-password` completion), dealer pending/status screens, login errors, and unauthenticated route guards (`admin` and buyer/dealer).
 - **Admin Module E2E (`tests/admin.e2e.spec.ts`, `7` tests)**:
   Exercises RBAC (`buyer`/`dealer`/`admin`/`super_admin`), live dashboard metrics/chart/responsive viewports, dealership moderation lifecycle with re-authentication, buyers/catalogue/districts/groups/quotations/bookings/reports/ratings live rendering, super-admin invites + Account password guard, and Settings cap validation + audit log persistence + formula-safe CSV export against remote `hjqpprhljvwmcelgwznq`.
 - **SQL Non-Destructive RLS Suite (`supabase/tests/admin_rls_and_rules.sql`)**:
@@ -91,6 +92,9 @@ Visual layout verification was executed across `360px` mobile, `768px` tablet, a
 6. **Provisioning Parameter Typing & Audit Log E2E Selector Race**:
    - *Symptom*: `run-remote-setup.ps1` hit `inconsistent types deduced for parameter $2` during test-account provisioning, and `tests/admin.e2e.spec.ts` had a hidden `<option>` match for `SETTING_UPDATED`.
    - *Fix*: Added explicit PostgreSQL type casts in provisioning SQL and refined the E2E selector to target visible audit-log rows cleanly.
+7. **Vercel Static Hosting Missing `/api/auth/*` & Forgot Password Silent Advance**:
+   - *Symptom*: Hosted Vercel builds served static `dist/` without Vite's `smtpEmailPlugin` middleware, causing `POST /api/auth/send-otp` to `404` while `ForgotPasswordPage.tsx` swallowed the error and opened the OTP screen anyway with no email sent; additionally, `supabase.auth.updateUser` lacked a logged-in recovery session.
+   - *Fix*: Extracted shared stateless handlers into `src/server/otpService.ts` + AES-256-GCM tokens (`src/server/otpToken.ts`), added Vercel Serverless Functions `api/auth/{smtp-status,send-otp,verify-otp,reset-password}.ts` + `vercel.json` rewrites, failed closed on non-OK `/api/auth/send-otp` responses, and completed password updates via `/api/auth/reset-password`.
 
 ---
 
@@ -98,6 +102,6 @@ Visual layout verification was executed across `360px` mobile, `768px` tablet, a
 
 Items requiring live external credentials or manual human verification outside automated runs:
 
-- [ ] **Live `.env.local` Gmail SMTP Inbox Test**: Confirm real SMTP credentials (`SMTP_USER`, `SMTP_PASS`) in local `.env.local` deliver a live OTP email when accepting an invite end-to-end via `/admin/accept-invite`.
-- [ ] **Optional Supabase Edge Function Dispatch**: Deploy `send-admin-invite` only if switching invite emails away from local `.env.local` SMTP in hosted production.
+- [ ] **Vercel Environment Variables & Live Redeploy Check**: Set `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SMTP_EMAIL`, `SMTP_PASSWORD`, `SMTP_SERVER`, `SMTP_PORT`, `SUPABASE_SERVICE_ROLE_KEY`, and `OTP_SIGNING_SECRET` in Vercel Project Settings -> Environment Variables, redeploy, and verify live Forgot Password OTP delivery and password reset on mobile & desktop.
+- [ ] **Live `.env.local` Gmail SMTP Inbox Test**: Confirm real SMTP credentials (`SMTP_EMAIL`, `SMTP_PASSWORD`) in local `.env.local` deliver a live OTP email when accepting an invite end-to-end via `/admin/accept-invite`.
 - [ ] **Post-Setup Security Hygiene**: Store the updated `autogroup256@gmail.com` (`super_admin`) password in a password manager, revoke the temporary Supabase Personal Access Token in Supabase Account Settings, and close/clear any terminal session holding `SUPABASE_ACCESS_TOKEN` or `SUPABASE_DB_PASSWORD`.

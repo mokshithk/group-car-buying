@@ -15,6 +15,8 @@ export function ForgotPasswordPage() {
   const [error, setError] = useState('');
   const [devOtp, setDevOtp] = useState('');
   const [smtpError, setSmtpError] = useState('');
+  const [challengeToken, setChallengeToken] = useState('');
+  const [verificationToken, setVerificationToken] = useState('');
   const [isNotRegistered, setIsNotRegistered] = useState(false);
   const [requestTimestamps, setRequestTimestamps] = useState<number[]>([]);
 
@@ -79,31 +81,26 @@ export function ForgotPasswordPage() {
         }
       }
 
-      // 2. Dispatch recovery code via local SMTP portal (configured in .env.local)
-      let recoveryDevOtp = '';
-      let recoverySmtpErr = '';
-      try {
-        const otpRes = await fetch('/api/auth/send-otp', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: cleanEmail, type: 'recovery' }),
-        });
-        const otpData = await otpRes.json();
-        if (otpData.devOtp) {
-          recoveryDevOtp = otpData.devOtp;
-        }
-        if (otpData.smtpError) {
-          recoverySmtpErr = otpData.smtpError;
-        }
-      } catch (otpErr) {
-        if (import.meta.env.DEV) {
-          console.warn('OTP dispatch fallback error:', otpErr);
-        }
+      // 2. Dispatch recovery code via SMTP portal (/api/auth/send-otp)
+      const otpRes = await fetch('/api/auth/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, type: 'recovery' }),
+      });
+
+      const otpData = await otpRes.json().catch(() => null);
+      if (!otpRes.ok || !otpData?.success) {
+        setError(
+          otpData?.error ||
+            'Unable to send recovery email. Verify email server (SMTP) settings and API deployment.'
+        );
+        return;
       }
 
-      // Advance to OTP verification step
-      setDevOtp(recoveryDevOtp);
-      setSmtpError(recoverySmtpErr);
+      // Advance to OTP verification step only after server accepted OTP dispatch
+      setChallengeToken(otpData.challengeToken || '');
+      setDevOtp(otpData.devOtp || '');
+      setSmtpError(otpData.smtpError || '');
       setStep('otp');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unable to dispatch recovery code.';
@@ -131,18 +128,26 @@ export function ForgotPasswordPage() {
     setIsUpdating(true);
 
     try {
-      const { error: updateErr } = await supabase.auth.updateUser({
-        password: newPassword,
+      const resetRes = await fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          newPassword,
+          verificationToken,
+        }),
       });
 
-      if (updateErr) {
-        setError(updateErr.message || 'Failed to update password. Please try again.');
+      const resetData = await resetRes.json().catch(() => null);
+      if (!resetRes.ok || !resetData?.success) {
+        setError(resetData?.error || 'Failed to update password. Please verify your recovery code again.');
         setIsUpdating(false);
         return;
       }
 
-      // Sign out of recovery session to require clean login with new password (Section G.4)
-      await supabase.auth.signOut();
+      // Clear any stale browser session so the user signs in cleanly with the new password
+      await supabase.auth.signOut().catch(() => {});
+      setVerificationToken('');
       setStep('success');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to update password.';
@@ -175,12 +180,18 @@ export function ForgotPasswordPage() {
             description={`Enter the 6-digit recovery code for ${email}`}
             initialDevOtp={devOtp}
             smtpError={smtpError}
+            initialChallengeToken={challengeToken}
             otpAlreadyDispatched={true}
             enableSupabaseLinkAutoDetect={false}
-            onSuccess={() => {
+            onSuccess={(verifiedToken) => {
+              setError('');
+              setVerificationToken(verifiedToken || '');
               setStep('new-password');
             }}
             onChangeEmail={() => {
+              setError('');
+              setChallengeToken('');
+              setVerificationToken('');
               setStep('email');
             }}
           />

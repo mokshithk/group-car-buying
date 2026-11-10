@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src",
+    "lint": "eslint src api",
     "test": "playwright test",
     "test:unit": "playwright test business-rules",
     "test:e2e": "playwright test tests/e2e.spec.ts"

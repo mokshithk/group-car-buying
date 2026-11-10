@@ -328,4 +328,74 @@ test.describe('Group Car Buying Platform E2E Suite', () => {
     await page.waitForURL('**/login**');
     await expect(page.locator('text=Welcome Back')).toBeVisible();
   });
+
+  test('14. Forgot password fails closed when OTP API fails and resets via OTP + reset-password API', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    await page.route('**/rest/v1/rpc/is_email_registered*', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(true) });
+    });
+
+    // 1. Simulate missing/misconfigured Vercel OTP API (503) -> MUST show error & stay on email step
+    await page.route('**/api/auth/send-otp', async (route) => {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: false, error: 'Email OTP service is not configured on the server.' }),
+      });
+    });
+
+    await page.goto('/forgot-password');
+    await page.fill('input[type="email"]', 'registered_buyer@testdomain.com');
+    await page.click('button:has-text("Send Recovery Code")');
+
+    await expect(page.locator('.bg-rose-50')).toContainText('Email OTP service is not configured on the server.');
+    await expect(page.locator('text=Verify Recovery Code')).not.toBeVisible();
+
+    // 2. Now simulate healthy Vercel SMTP OTP -> verify-otp -> reset-password
+    await page.unroute('**/api/auth/send-otp');
+    await page.route('**/api/auth/send-otp', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          channel: 'smtp',
+          challengeToken: 'mock-challenge-token',
+        }),
+      });
+    });
+    await page.route('**/api/auth/verify-otp', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          success: true,
+          verificationToken: 'mock-verified-token',
+        }),
+      });
+    });
+    await page.route('**/api/auth/reset-password', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true, message: 'Password updated successfully.' }),
+      });
+    });
+
+    await page.click('button:has-text("Send Recovery Code")');
+    await expect(page.locator('text=Verify Recovery Code')).toBeVisible({ timeout: 10000 });
+
+    const digits = ['1', '2', '3', '4', '5', '6'];
+    for (let i = 0; i < digits.length; i++) {
+      await page.fill(`input[aria-label="Digit ${i + 1}"]`, digits[i]);
+    }
+
+    await expect(page.locator('text=Create New Password')).toBeVisible({ timeout: 10000 });
+    await page.fill('input[placeholder="Enter at least 8 characters"]', 'NewSecurePass123!');
+    await page.fill('input[placeholder="Confirm new password"]', 'NewSecurePass123!');
+    await page.click('button:has-text("Save New Password")');
+
+    await expect(page.locator('text=Password Reset Complete')).toBeVisible({ timeout: 10000 });
+  });
 });

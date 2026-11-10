@@ -12,6 +12,7 @@ import {
   sha256Hex,
   generateInviteToken,
 } from '../../src/lib/adminHelpers';
+import { sealToken, unsealToken, safeCodeEquals, type OtpChallengePayload } from '../../src/server/otpToken';
 
 test.describe('Unit Tests: Core Business Rules', () => {
   // Test 1: formatINR formatting
@@ -224,5 +225,38 @@ test.describe('Unit Tests: Core Business Rules', () => {
     const hash = await sha256Hex(tok1);
     expect(hash).toMatch(/^[0-9a-f]{64}$/);
     expect(hash).not.toBe(tok1);
+  });
+
+  // Test 11: Stateless AES-256-GCM OTP Token & Constant-Time Code Comparison
+  test('11. sealToken/unsealToken round-trips OTP payloads and rejects tampered or wrong-secret tokens', () => {
+    const secret = 'test-otp-signing-secret-0123456789abcdef';
+    const payload: OtpChallengePayload = {
+      kind: 'otp_challenge',
+      email: 'user@example.com',
+      type: 'recovery',
+      code: '482913',
+      attempts: 0,
+      exp: Date.now() + 600000,
+    };
+
+    const token = sealToken(payload, secret);
+    expect(token.split('.')).toHaveLength(3);
+    expect(token).not.toContain('482913');
+
+    const decoded = unsealToken<OtpChallengePayload>(token, secret);
+    expect(decoded).toEqual(payload);
+
+    // Wrong secret or tampered ciphertext fails closed
+    expect(unsealToken<OtpChallengePayload>(token, 'wrong-secret')).toBeNull();
+    const parts = token.split('.');
+    const tamperedCipher = Buffer.from(parts[2], 'base64url');
+    tamperedCipher[0] ^= 0xff;
+    parts[2] = tamperedCipher.toString('base64url');
+    expect(unsealToken<OtpChallengePayload>(parts.join('.'), secret)).toBeNull();
+
+    // Timing-safe code comparison
+    expect(safeCodeEquals('482913', '482913')).toBe(true);
+    expect(safeCodeEquals('482913', '482914')).toBe(false);
+    expect(safeCodeEquals('482913', '48291')).toBe(false);
   });
 });

@@ -61,10 +61,16 @@ Copy `.env.example` to `.env.local` and add your Supabase credentials:
 ```bash
 cp .env.example .env.local
 ```
-Update `.env.local`:
+Update `.env.local` (and add the same variables in **Vercel -> Project Settings -> Environment Variables** when hosting on Vercel — note `SUPABASE_SERVICE_ROLE_KEY` and `OTP_SIGNING_SECRET` enable `/api/auth/reset-password` and stateless OTP verification across serverless instances):
 ```env
 VITE_SUPABASE_URL=https://your-supabase-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-supabase-anon-key
+SMTP_EMAIL=your-gmail@gmail.com
+SMTP_PASSWORD=your-google-app-password
+SMTP_SERVER=smtp.gmail.com
+SMTP_PORT=465
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+OTP_SIGNING_SECRET=your-long-random-secret
 ```
 
 ### 4. Supabase Migrations & Database Setup

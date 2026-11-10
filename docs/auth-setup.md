@@ -4,11 +4,13 @@ This guide describes how AutoGroup handles 6-digit Email OTP verification, Admin
 
 ---
 
-## 1. Local `.env.local` SMTP OTP Portal (Active Default)
+## 1. Local & Vercel SMTP OTP Portal (Active Default)
 
-All interactive 6-digit OTP flows (buyer registration, dealership registration, forgot-password recovery, and `/admin/accept-invite` confirmation) route through [src/server/smtpPlugin.ts](../src/server/smtpPlugin.ts) (`POST /api/auth/send-otp`, `POST /api/auth/verify-otp`):
+All interactive 6-digit OTP flows (buyer registration, dealership registration, forgot-password recovery, and `/admin/accept-invite` confirmation) route through shared handlers in [src/server/otpService.ts](../src/server/otpService.ts) (`POST /api/auth/send-otp`, `POST /api/auth/verify-otp`, `POST /api/auth/reset-password`, `GET /api/auth/smtp-status`):
+- **Localhost (`npm run dev` / `npm run preview`)**: Served by Vite middleware in [src/server/smtpPlugin.ts](../src/server/smtpPlugin.ts), reading `.env.local` / `.env`.
+- **Vercel Deployment**: Served by Vercel Serverless Functions in `api/auth/` (`smtp-status.ts`, `send-otp.ts`, `verify-otp.ts`, `reset-password.ts`) with SPA routing configured in [vercel.json](../vercel.json). OTP challenge and recovery verification tokens use stateless AES-256-GCM encryption (`src/server/otpToken.ts`) so verification works reliably across stateless serverless instances and mobile browsers.
 
-1. Configure your `.env.local` file (gitignored — never commit secrets):
+1. Configure your `.env.local` file locally (gitignored — never commit secrets):
    ```env
    VITE_SUPABASE_URL=https://<your-project-ref>.supabase.co
    VITE_SUPABASE_ANON_KEY=<your-anon-key>
@@ -17,10 +19,15 @@ All interactive 6-digit OTP flows (buyer registration, dealership registration, 
    SMTP_PASSWORD=your-app-password
    SMTP_SERVER=smtp.gmail.com
    SMTP_PORT=465
+
+   # Required for server-side Forgot Password completion (/api/auth/reset-password)
+   SUPABASE_SERVICE_ROLE_KEY=<your-supabase-service-role-key>
+   OTP_SIGNING_SECRET=<long-random-secret>
    ```
-2. Keep Supabase Dashboard **Authentication -> Providers -> Email -> Confirm email** toggled **OFF** (`mailer_autoconfirm: true`), and **Site URL** set to `http://localhost:5173`.
-   - Why: Supabase does not send confirmation emails directly or block password login while local SMTP delivers and verifies all 6-digit OTPs cleanly.
-   - If `SMTP_EMAIL` / `SMTP_PASSWORD` are left blank during local automated Playwright tests, `OtpVerification.tsx` displays a `[Dev OTP]` preview banner and Auto-Fill helper.
+2. Add those same variables in **Vercel Dashboard -> Project -> Settings -> Environment Variables** (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `SMTP_EMAIL`, `SMTP_PASSWORD`, `SMTP_SERVER`, `SMTP_PORT`, `SUPABASE_SERVICE_ROLE_KEY`, `OTP_SIGNING_SECRET`). Never prefix `SUPABASE_SERVICE_ROLE_KEY`, `SMTP_PASSWORD`, or `OTP_SIGNING_SECRET` with `VITE_`.
+3. Keep Supabase Dashboard **Authentication -> Providers -> Email -> Confirm email** toggled **OFF** (`mailer_autoconfirm: true`).
+   - Why: Supabase does not send confirmation emails directly or block password login while your SMTP OTP portal delivers and verifies all 6-digit OTPs cleanly.
+   - During local non-Vercel dev/test runs when `SMTP_EMAIL` / `SMTP_PASSWORD` are left blank, `OtpVerification.tsx` displays a `[Dev OTP]` preview banner and Auto-Fill helper. On Vercel production (`VERCEL=1`), `devOtp` fallback is strictly disabled.
 
 ---
 

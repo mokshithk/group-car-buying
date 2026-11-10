@@ -12,9 +12,10 @@ interface OtpVerificationProps {
   description?: string;
   initialDevOtp?: string;
   smtpError?: string;
+  initialChallengeToken?: string;
   otpAlreadyDispatched?: boolean;
   enableSupabaseLinkAutoDetect?: boolean;
-  onSuccess: () => void | Promise<void>;
+  onSuccess: (verificationToken?: string) => void | Promise<void>;
   onChangeEmail?: () => void;
 }
 
@@ -27,6 +28,7 @@ export function OtpVerification({
   description,
   initialDevOtp,
   smtpError: initialSmtpError,
+  initialChallengeToken,
   otpAlreadyDispatched = false,
   enableSupabaseLinkAutoDetect = false,
   onSuccess,
@@ -40,6 +42,7 @@ export function OtpVerification({
   const [resendNotice, setResendNotice] = useState('');
   const [devCode, setDevCode] = useState<string | null>(initialDevOtp || null);
   const [smtpErr, setSmtpErr] = useState<string | null>(initialSmtpError || null);
+  const [challengeToken, setChallengeToken] = useState<string>(initialChallengeToken || '');
   const [isSmtpConfigured, setIsSmtpConfigured] = useState<boolean | null>(null);
   const hasDispatchedRef = useRef(otpAlreadyDispatched);
 
@@ -56,7 +59,8 @@ export function OtpVerification({
   useEffect(() => {
     if (initialDevOtp) setDevCode(initialDevOtp);
     if (initialSmtpError) setSmtpErr(initialSmtpError);
-  }, [initialDevOtp, initialSmtpError]);
+    if (initialChallengeToken) setChallengeToken(initialChallengeToken);
+  }, [initialDevOtp, initialSmtpError, initialChallengeToken]);
 
   // 3. Query SMTP status and dispatch initial OTP ONLY if parent didn't already dispatch it
   useEffect(() => {
@@ -80,9 +84,9 @@ export function OtpVerification({
     }
 
     fetch('/api/auth/smtp-status')
-      .then((r) => r.json())
+      .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        setIsSmtpConfigured(Boolean(data.configured));
+        if (data) setIsSmtpConfigured(Boolean(data.configured));
       })
       .catch(() => {});
 
@@ -93,16 +97,24 @@ export function OtpVerification({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, type }),
       })
-        .then((r) => r.json())
-        .then((data) => {
+        .then(async (r) => ({ ok: r.ok, data: await r.json().catch(() => null) }))
+        .then(({ ok, data }) => {
+          if (!ok || !data?.success) {
+            setError(data?.error || 'Unable to send verification code. Please check email server settings.');
+            return;
+          }
+          if (data.challengeToken) setChallengeToken(data.challengeToken);
           if (data.devOtp) setDevCode(data.devOtp);
           if (data.smtpError) setSmtpErr(data.smtpError);
           if (data.channel === 'smtp') {
             setDevCode(null);
             setSmtpErr(null);
+            setIsSmtpConfigured(true);
           }
         })
-        .catch(() => {});
+        .catch(() => {
+          setError('Unable to reach OTP email service.');
+        });
     }
   }, [email, type, provider, allowCreateUser]);
 
@@ -195,27 +207,29 @@ export function OtpVerification({
     try {
       let handledByPortal = false;
       if (provider !== 'supabase_otp') {
-        // 1. Verify against local SMTP OTP server
-        try {
-          const portalRes = await fetch('/api/auth/verify-otp', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, code: token, type }),
-          });
+        // 1. Verify against SMTP OTP server (/api/auth/verify-otp)
+        const portalRes = await fetch('/api/auth/verify-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, code: token, type, challengeToken }),
+        });
 
-          if (portalRes.status !== 404) {
-            handledByPortal = true;
-            const portalData = await portalRes.json();
-            if (portalData.success) {
-              await onSuccess();
-              return;
-            }
-            setError(portalData.error || 'Incorrect verification code. Please try again.');
-            return;
-          }
-        } catch {
-          // Local endpoint unreachable (e.g. static hosting) -> fall through to Supabase
+        if (portalRes.status === 404) {
+          setError('OTP verification service (/api/auth/verify-otp) is unavailable on this deployment.');
+          return;
         }
+
+        handledByPortal = true;
+        const portalData = await portalRes.json().catch(() => null);
+        if (portalData?.nextChallengeToken) {
+          setChallengeToken(portalData.nextChallengeToken);
+        }
+        if (portalRes.ok && portalData?.success) {
+          await onSuccess(portalData.verificationToken);
+          return;
+        }
+        setError(portalData?.error || 'Incorrect verification code. Please try again.');
+        return;
       }
 
       if (!handledByPortal) {
@@ -271,7 +285,13 @@ export function OtpVerification({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email, type }),
         });
-        const data = await res.json();
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.success) {
+          throw new Error(data?.error || 'Failed to resend verification code.');
+        }
+        if (data.challengeToken) {
+          setChallengeToken(data.challengeToken);
+        }
 
         if (data.channel === 'smtp') {
           setDevCode(null);
@@ -372,7 +392,7 @@ export function OtpVerification({
         {isSmtpConfigured && !devCode && (
           <div className="p-2.5 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-800 flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />
-            <span>6-digit OTP email sent via Gmail SMTP (.env.local)</span>
+            <span>6-digit OTP email sent via Gmail SMTP</span>
           </div>
         )}
 

@@ -32,6 +32,7 @@ export interface OtpDispatchResult {
   devOtp?: string;
   smtpError?: string;
   channel?: string;
+  challengeToken?: string;
 }
 
 interface AuthContextType {
@@ -371,9 +372,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         body: JSON.stringify({ email: cleanEmail, type: 'signup', fullName }),
       });
 
-      const otpData = await otpRes.json();
-      if (!otpData.success) {
-        return { success: false, error: otpData.error || 'Failed to dispatch OTP email.' };
+      const otpData = await otpRes.json().catch(() => null);
+      if (!otpRes.ok || !otpData?.success) {
+        return {
+          success: false,
+          error: otpData?.error || 'Failed to dispatch OTP email. Please verify email server configuration.',
+        };
       }
 
       return {
@@ -381,6 +385,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         devOtp: otpData.devOtp,
         smtpError: otpData.smtpError,
         channel: otpData.channel,
+        challengeToken: otpData.challengeToken,
       };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unable to send OTP verification code.';

@@ -37,6 +37,7 @@ export function DealerRegisterPage() {
   const [showOtp, setShowOtp] = useState(false);
   const [devOtp, setDevOtp] = useState('');
   const [smtpError, setSmtpError] = useState('');
+  const [challengeToken, setChallengeToken] = useState('');
 
   useEffect(() => {
     fetchDistricts().then((dList) => {
@@ -81,6 +82,7 @@ export function DealerRegisterPage() {
     if (otpRes.success) {
       setDevOtp(otpRes.devOtp || '');
       setSmtpError(otpRes.smtpError || '');
+      setChallengeToken(otpRes.challengeToken || '');
       setShowOtp(true);
     } else {
       setAlreadyRegistered(Boolean(otpRes.alreadyRegistered));
@@ -108,6 +110,7 @@ export function DealerRegisterPage() {
             title="Verify Dealership Account"
             initialDevOtp={devOtp}
             smtpError={smtpError}
+            initialChallengeToken={challengeToken}
             otpAlreadyDispatched={true}
             enableSupabaseLinkAutoDetect={false}
             onSuccess={async () => {
