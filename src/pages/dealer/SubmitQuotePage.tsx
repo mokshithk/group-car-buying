@@ -5,15 +5,31 @@ import { Button, Input, Card, CardHeader, CardTitle, CardDescription, CardConten
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/Toast';
 import { fetchGroupById } from '@/lib/groupService';
-import { fetchQuotationsForGroup, isQuoteExpired } from '@/lib/quoteService';
+import {
+  fetchQuotationsForGroup,
+  submitQuotation,
+  isQuoteExpired,
+} from '@/lib/quoteService';
+import { fetchPlatformSettings, DEFAULT_PLATFORM_SETTINGS } from '@/lib/catalogService';
 import { formatINR } from '@/lib/formatters';
 import { Group, Quotation } from '@/types';
 import {
   ArrowLeft,
   Tag,
   AlertTriangle,
+  AlertCircle,
   Save,
+  Plus,
+  Trash2,
 } from 'lucide-react';
+
+interface DraftQuoteItem {
+  item_name: string;
+  amount: number;
+  is_optional: boolean;
+}
+
+const OPEN_GROUP_STATUSES = new Set(['FORMING', 'OPEN_FOR_QUOTES', 'OFFERS_RECEIVED']);
 
 export function SubmitQuotePage() {
   const { id } = useParams<{ id: string }>();
@@ -23,49 +39,96 @@ export function SubmitQuotePage() {
 
   const [group, setGroup] = useState<Group | null>(null);
   const [existingQuotes, setExistingQuotes] = useState<Quotation[]>([]);
+  const [myExistingQuote, setMyExistingQuote] = useState<Quotation | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Quote input form state
-  const [exShowroom, setExShowroom] = useState<number>(1220000);
-  const [insurance, setInsurance] = useState<number>(44000);
-  const [registration, setRegistration] = useState<number>(183000);
-  const [discounts, setDiscounts] = useState<number>(35000);
-  const [accessories, setAccessories] = useState<number>(12000);
-  const [validityDays, setValidityDays] = useState<number>(15);
-  const [terms, setTerms] = useState(
-    'Includes 3-year extended warranty and zero depreciation cover. Delivery within 21 days.'
+  const [exShowroom, setExShowroom] = useState<number>(0);
+  const [insurance, setInsurance] = useState<number>(0);
+  const [registration, setRegistration] = useState<number>(0);
+  const [discounts, setDiscounts] = useState<number>(0);
+  const [accessories, setAccessories] = useState<number>(0);
+  const [validityDays, setValidityDays] = useState<number>(
+    DEFAULT_PLATFORM_SETTINGS.quoteValidityDefaultDays
   );
+  const [terms, setTerms] = useState('');
+  const [quoteItems, setQuoteItems] = useState<DraftQuoteItem[]>([]);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    async function load() {
-      if (!id) return;
-      setIsLoading(true);
-      const g = await fetchGroupById(id);
-      if (g) {
-        setGroup(g);
-        if (g.variant?.ex_showroom_price) {
-          setExShowroom(g.variant.ex_showroom_price);
-        }
-        const qList = await fetchQuotationsForGroup(g.id);
-        setExistingQuotes(qList);
+    let cancelled = false;
 
-        // Preload our showroom's quote if exists
-        const myQ = qList.find((q) => q.dealership_id === dealership?.id);
-        if (myQ) {
-          setExShowroom(myQ.ex_showroom_price);
-          setInsurance(myQ.insurance);
-          setRegistration(myQ.registration_charges);
-          setDiscounts(myQ.discounts);
-          setAccessories(myQ.accessories_extras);
-          if (myQ.terms) setTerms(myQ.terms);
+    async function load() {
+      if (!id) {
+        setIsLoading(false);
+        return;
+      }
+
+      setIsLoading(true);
+      setLoadError(null);
+      try {
+        const [g, settings, qList] = await Promise.all([
+          fetchGroupById(id),
+          fetchPlatformSettings(),
+          fetchQuotationsForGroup(id, { includeInactive: true }),
+        ]);
+
+        if (cancelled) return;
+
+        if (g) {
+          setGroup(g);
+          setExistingQuotes(qList);
+
+          const myQ = qList.find((q) => q.dealership_id === dealership?.id) || null;
+          setMyExistingQuote(myQ);
+
+          if (myQ) {
+            setExShowroom(myQ.ex_showroom_price);
+            setInsurance(myQ.insurance);
+            setRegistration(myQ.registration_charges);
+            setDiscounts(myQ.discounts);
+            setAccessories(myQ.accessories_extras);
+            setTerms(myQ.terms || '');
+            setQuoteItems(
+              (myQ.quote_items || []).map((item) => ({
+                item_name: item.item_name,
+                amount: Number(item.amount) || 0,
+                is_optional: Boolean(item.is_optional),
+              }))
+            );
+
+            const remDays = Math.ceil(
+              (new Date(myQ.validity_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)
+            );
+            setValidityDays(
+              Number.isFinite(remDays) && remDays >= 1
+                ? Math.min(90, remDays)
+                : settings.quoteValidityDefaultDays
+            );
+          } else {
+            setExShowroom(g.variant?.ex_showroom_price || 0);
+            setValidityDays(settings.quoteValidityDefaultDays);
+          }
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : 'Unable to load quotation editor.');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
         }
       }
-      setIsLoading(false);
     }
+
     load();
-  }, [id, dealership]);
+    return () => {
+      cancelled = true;
+    };
+  }, [id, dealership?.id]);
 
   // Real-time calculation: Net On-Road Price
   const computedOnRoad =
@@ -75,31 +138,100 @@ export function SubmitQuotePage() {
     Number(discounts || 0) +
     Number(accessories || 0);
 
-  // Validation: Incomplete check
+  // Validation checks
   const isIncomplete = Number(insurance) <= 0 || Number(registration) <= 0;
+  const isDeactivatedQuote = myExistingQuote?.is_active === false;
+  const isGroupClosed = Boolean(group && !OPEN_GROUP_STATUSES.has(group.status));
+  const isDealerVerified = dealership?.status === 'VERIFIED';
 
-  // Calculate live ranking
+  // Calculate live ranking excluding our showroom's previous quote
   const validCompletePrices = existingQuotes
-    .filter((q) => q.is_complete && !isQuoteExpired(q.validity_date))
+    .filter(
+      (q) =>
+        q.id !== myExistingQuote?.id &&
+        q.is_active !== false &&
+        q.is_complete &&
+        !isQuoteExpired(q.validity_date)
+    )
     .map((q) => q.on_road_price);
 
   const allPricesWithOurs = [...validCompletePrices, computedOnRoad].sort((a, b) => a - b);
   const myProjectedRank = allPricesWithOurs.indexOf(computedOnRoad) + 1;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleAddLineItem = () => {
+    setQuoteItems((prev) => [...prev, { item_name: '', amount: 0, is_optional: true }]);
+  };
+
+  const handleRemoveLineItem = (idx: number) => {
+    setQuoteItems((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!group) return;
+    if (!group || !dealership?.id || isSubmitting) return;
+
+    setSubmitError(null);
+
+    if (!isDealerVerified) {
+      setSubmitError('Only VERIFIED dealerships may publish or revise quotations.');
+      return;
+    }
+    if (isGroupClosed) {
+      setSubmitError(`This group is ${group.status.toLowerCase()} and no longer accepting quotations.`);
+      return;
+    }
+    if (isDeactivatedQuote) {
+      setSubmitError('This quotation was deactivated by administration and cannot be revised.');
+      return;
+    }
+    if (computedOnRoad <= 0) {
+      setSubmitError('Total on-road price must be greater than ₹0.');
+      return;
+    }
+
+    const clampedDays = Math.min(90, Math.max(1, Math.round(Number(validityDays) || 14)));
+    const validityDateIso = new Date(Date.now() + clampedDays * 24 * 60 * 60 * 1000).toISOString();
 
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
+    try {
+      const res = await submitQuotation({
+        groupId: group.id,
+        dealershipId: dealership.id,
+        exShowroomPrice: Number(exShowroom) || 0,
+        insurance: Number(insurance) || 0,
+        registrationCharges: Number(registration) || 0,
+        discounts: Number(discounts) || 0,
+        accessoriesExtras: Number(accessories) || 0,
+        onRoadPrice: computedOnRoad,
+        validityDate: validityDateIso,
+        terms: terms.trim(),
+        isComplete: !isIncomplete,
+        quoteItems,
+      });
+
+      if (!res.success) {
+        setSubmitError(res.error || 'Could not publish quotation.');
+        toast({
+          type: 'error',
+          title: 'Quotation Not Saved',
+          message: res.error || 'Please review your quotation figures and try again.',
+        });
+        return;
+      }
+
       toast({
         type: 'success',
-        title: 'Quotation Published Successfully',
-        message: 'Your revised on-road price has been recorded. All group buyers have been alerted.',
+        title: myExistingQuote ? 'Quotation Revised & Published' : 'Quotation Published Successfully',
+        message: 'Your itemized on-road price has been saved and buyers in the group have been notified.',
       });
       navigate(`/dealer/groups/${group.id}`);
-    }, 600);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Unable to save quotation.';
+      setSubmitError(msg);
+      toast({ type: 'error', title: 'Save Failed', message: msg });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   if (isLoading) {
@@ -110,11 +242,14 @@ export function SubmitQuotePage() {
     );
   }
 
-  if (!group) {
+  if (loadError || !group) {
     return (
       <DealerLayout>
         <div className="py-20 text-center space-y-3">
-          <h2 className="text-lg font-bold text-slate-900">Group tender not found</h2>
+          <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
+          <h2 className="text-lg font-bold text-slate-900">
+            {loadError || 'Group tender not found'}
+          </h2>
           <Link to="/dealer/groups">
             <Button variant="secondary" size="sm">Back to Eligible Groups</Button>
           </Link>
@@ -165,6 +300,24 @@ export function SubmitQuotePage() {
             <div className="text-base font-black text-emerald-400">{formatINR(computedOnRoad)}</div>
           </div>
         </div>
+
+        {submitError && (
+          <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{submitError}</span>
+          </div>
+        )}
+
+        {(isDeactivatedQuote || isGroupClosed) && (
+          <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-900 flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              {isDeactivatedQuote
+                ? 'This quotation has been deactivated by platform administrators and is read-only.'
+                : `This buying group is ${group.status} and is no longer accepting quotation edits.`}
+            </span>
+          </div>
+        )}
 
         {/* INCOMPLETE QUOTE WARNING (Section 2 & 3: missing components excluded from best price) */}
         {isIncomplete && (
@@ -237,8 +390,8 @@ export function SubmitQuotePage() {
                 <Input
                   label="Quotation Validity (Days from Today)"
                   type="number"
-                  min={5}
-                  max={60}
+                  min={1}
+                  max={90}
                   required
                   value={validityDays}
                   onChange={(e) => setValidityDays(Number(e.target.value))}
@@ -256,6 +409,92 @@ export function SubmitQuotePage() {
                 value={terms}
                 onChange={(e) => setTerms(e.target.value)}
               />
+
+              {/* Optional itemized accessories / line items */}
+              <div className="pt-3 border-t border-slate-100 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-semibold text-slate-800">
+                      Itemized Accessories / Add-ons (Optional)
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      Break down accessories, extended warranty packages, or handling items for buyers.
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleAddLineItem}
+                    leftIcon={<Plus className="w-3.5 h-3.5" />}
+                  >
+                    Add Item
+                  </Button>
+                </div>
+
+                {quoteItems.map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center p-2.5 rounded-xl bg-slate-50 border border-slate-200"
+                  >
+                    <div className="sm:col-span-6">
+                      <input
+                        type="text"
+                        placeholder="Item name (e.g. Floor Mats & Mud Flaps)"
+                        value={item.item_name}
+                        onChange={(e) =>
+                          setQuoteItems((prev) =>
+                            prev.map((row, i) =>
+                              i === idx ? { ...row, item_name: e.target.value } : row
+                            )
+                          )
+                        }
+                        className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs bg-white"
+                      />
+                    </div>
+                    <div className="sm:col-span-3">
+                      <input
+                        type="number"
+                        min={0}
+                        placeholder="Amount"
+                        value={item.amount}
+                        onChange={(e) =>
+                          setQuoteItems((prev) =>
+                            prev.map((row, i) =>
+                              i === idx ? { ...row, amount: Number(e.target.value) || 0 } : row
+                            )
+                          )
+                        }
+                        className="w-full rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs bg-white"
+                      />
+                    </div>
+                    <label className="sm:col-span-2 flex items-center gap-1.5 text-[11px] text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={item.is_optional}
+                        onChange={(e) =>
+                          setQuoteItems((prev) =>
+                            prev.map((row, i) =>
+                              i === idx ? { ...row, is_optional: e.target.checked } : row
+                            )
+                          )
+                        }
+                      />
+                      Optional
+                    </label>
+                    <div className="sm:col-span-1 flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveLineItem(idx)}
+                        className="p-1.5 text-slate-400 hover:text-rose-600"
+                        title="Remove line item"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </CardContent>
           </Card>
 
@@ -265,6 +504,7 @@ export function SubmitQuotePage() {
             size="lg"
             className="w-full font-bold"
             isLoading={isSubmitting}
+            disabled={isDeactivatedQuote || isGroupClosed || !isDealerVerified}
             leftIcon={<Save className="w-4 h-4" />}
           >
             Publish Quotation to Group ({formatINR(computedOnRoad)})

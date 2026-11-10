@@ -218,7 +218,7 @@ export function AcceptAdminInvitePage() {
             email={inviteInfo.email || ''}
             type="signup"
             title="Verify Invited Email Address"
-            description={`Enter the 6-digit OTP sent to ${inviteInfo.email} via your local SMTP portal before setting your administrator password.`}
+            description={`Enter the 6-digit OTP sent to ${inviteInfo.email} before setting your administrator password.`}
             onSuccess={() => setOtpVerified(true)}
           />
         ) : (

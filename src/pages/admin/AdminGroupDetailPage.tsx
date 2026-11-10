@@ -66,7 +66,10 @@ export function AdminGroupDetailPage() {
 
       const activeMembers = mList.filter((m) => m.status === 'ACTIVE');
       const daysOld = Math.floor((Date.now() - new Date(g.created_at).getTime()) / 86400000);
-      setIsVisibleToDealers(activeMembers.length >= visThreshold || (activeMembers.length === 2 && daysOld >= visDays));
+      const isOpen = ['FORMING', 'OPEN_FOR_QUOTES', 'OFFERS_RECEIVED'].includes(g.status);
+      setIsVisibleToDealers(
+        isOpen && (activeMembers.length >= visThreshold || (activeMembers.length === 2 && daysOld >= visDays))
+      );
 
       // Compute automatic rapid-join suspicious hint
       const timestamps = activeMembers.map((m) => new Date(m.joined_at).getTime()).sort((a, b) => a - b);
@@ -164,7 +167,7 @@ export function AdminGroupDetailPage() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                {group.status !== 'CANCELLED' && group.status !== 'EXPIRED' && (
+                {!['CANCELLED', 'EXPIRED', 'COMPLETED'].includes(group.status) && (
                   <>
                     <Button variant="danger" size="sm" onClick={() => setAction('CANCEL')} leftIcon={<XCircle className="w-3.5 h-3.5" />}>
                       Cancel Group

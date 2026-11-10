@@ -197,8 +197,9 @@ export function AdminCataloguePage() {
     setVarModelId(v?.model_id || models[0]?.id || '');
     setVarName(v?.name || '');
     setVarTrans(v?.transmission || 'Manual');
-    setVarFuel(v?.fuel_type || 'Petrol');
-    setVarEngineCc(String(v?.engine_cc ?? 1197));
+    const fuel = v?.fuel_type || 'Petrol';
+    setVarFuel(fuel);
+    setVarEngineCc(fuel === 'Electric' ? '' : String(v?.engine_cc ?? 1197));
     setVarPrice(String(v?.ex_showroom_price ?? 950000));
     setVarFeatures((v?.features || []).join(', '));
     setVarActive(v?.is_active ?? true);
@@ -219,7 +220,7 @@ export function AdminCataloguePage() {
         p_name: varName,
         p_transmission: varTrans,
         p_fuel_type: varFuel,
-        p_engine_cc: varEngineCc ? Number(varEngineCc) : null,
+        p_engine_cc: varFuel === 'Electric' ? null : (varEngineCc ? Number(varEngineCc) : null),
         p_ex_showroom_price: Number(varPrice) || 0,
         p_features: feats,
         p_is_active: varActive,
@@ -471,9 +472,30 @@ export function AdminCataloguePage() {
           />
           <Input label="Variant Name" value={varName} onChange={(e) => setVarName(e.target.value)} required placeholder="e.g. ZX+ Petrol AT" />
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Select label="Fuel Type" value={varFuel} onChange={(e) => setVarFuel(e.target.value as Variant['fuel_type'])} options={FUEL_TYPES.map((f) => ({ value: f, label: f }))} />
+            <Select
+              label="Fuel Type"
+              value={varFuel}
+              onChange={(e) => {
+                const nextFuel = e.target.value as Variant['fuel_type'];
+                setVarFuel(nextFuel);
+                if (nextFuel === 'Electric') {
+                  setVarEngineCc('');
+                } else if (!varEngineCc) {
+                  setVarEngineCc('1197');
+                }
+              }}
+              options={FUEL_TYPES.map((f) => ({ value: f, label: f }))}
+            />
             <Select label="Transmission" value={varTrans} onChange={(e) => setVarTrans(e.target.value as Variant['transmission'])} options={TRANSMISSIONS.map((t) => ({ value: t, label: t }))} />
-            <Input label="Engine (cc)" type="number" min="0" value={varEngineCc} onChange={(e) => setVarEngineCc(e.target.value)} />
+            <Input
+              label="Engine (cc)"
+              type="number"
+              min="0"
+              disabled={varFuel === 'Electric'}
+              placeholder={varFuel === 'Electric' ? 'N/A (Electric EV)' : 'e.g. 1197'}
+              value={varFuel === 'Electric' ? '' : varEngineCc}
+              onChange={(e) => setVarEngineCc(e.target.value)}
+            />
           </div>
           <Input label="Indicative Ex-Showroom Price (INR)" type="number" min="0" value={varPrice} onChange={(e) => setVarPrice(e.target.value)} required />
           <Input label="Key Features (comma separated)" value={varFeatures} onChange={(e) => setVarFeatures(e.target.value)} />

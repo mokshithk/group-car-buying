@@ -4,7 +4,11 @@ import { supabase } from '@/lib/supabase';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { DataTable, ColumnDef } from '@/components/admin/DataTable';
 import { ReAuthModal } from '@/components/admin/ReAuthModal';
-import { buildCsvContent, triggerCsvDownload } from '@/lib/adminHelpers';
+import {
+  buildCsvContent,
+  triggerCsvDownload,
+  sanitizePostgrestSearch,
+} from '@/lib/adminHelpers';
 import { Profile, District, AccountStatus } from '@/types';
 import { formatDate } from '@/lib/formatters';
 import { useToast } from '@/components/ui/Toast';
@@ -72,7 +76,7 @@ export function AdminBuyersPage() {
         query = query.eq('district_id', districtFilter);
       }
 
-      const q = searchQuery.trim();
+      const q = sanitizePostgrestSearch(searchQuery);
       if (q) {
         query = query.or(`full_name.ilike.%${q}%,email.ilike.%${q}%,phone.ilike.%${q}%`);
       }
@@ -133,11 +137,21 @@ export function AdminBuyersPage() {
   };
 
   const handleExportCsv = async () => {
-    const { data, error: expErr } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('role', 'buyer')
-      .order('created_at', { ascending: false });
+    let expQuery = supabase.from('profiles').select('*').eq('role', 'buyer');
+    if (tab === 'DELETION_REQUESTS') {
+      expQuery = expQuery.eq('deletion_status', 'PENDING');
+    } else if (tab !== 'ALL') {
+      expQuery = expQuery.eq('status', tab);
+    }
+    if (districtFilter) {
+      expQuery = expQuery.eq('district_id', districtFilter);
+    }
+    const q = sanitizePostgrestSearch(searchQuery);
+    if (q) {
+      expQuery = expQuery.or(`full_name.ilike.%${q}%,email.ilike.%${q}%,phone.ilike.%${q}%`);
+    }
+
+    const { data, error: expErr } = await expQuery.order('created_at', { ascending: false });
 
     if (expErr || !data) {
       toast({ type: 'error', title: 'Export Failed', message: expErr?.message });
@@ -231,16 +245,28 @@ export function AdminBuyersPage() {
             <Button variant="ghost" size="sm">Details</Button>
           </Link>
           {b.deletion_status === 'PENDING' && (
-            <Button
-              variant="danger"
-              size="sm"
-              onClick={() => {
-                setTargetBuyer(b);
-                setActionType('PROCESS_DELETION');
-              }}
-            >
-              Process Deletion
-            </Button>
+            <>
+              <Button
+                variant="danger"
+                size="sm"
+                onClick={() => {
+                  setTargetBuyer(b);
+                  setActionType('PROCESS_DELETION');
+                }}
+              >
+                Process Deletion
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setTargetBuyer(b);
+                  setActionType('REJECT_DELETION');
+                }}
+              >
+                Reject Deletion
+              </Button>
+            </>
           )}
           {(b.status || 'ACTIVE') === 'ACTIVE' && (
             <Button
@@ -356,6 +382,8 @@ export function AdminBuyersPage() {
         title={
           actionType === 'PROCESS_DELETION'
             ? 'Process Account Deletion Request'
+            : actionType === 'REJECT_DELETION'
+            ? 'Reject Deletion Request'
             : actionType === 'SUSPEND'
             ? 'Suspend Buyer Account'
             : actionType === 'REACTIVATE'
@@ -367,6 +395,10 @@ export function AdminBuyersPage() {
             <p>
               Processing deletion for <strong>{targetBuyer?.full_name}</strong> ({targetBuyer?.email}) will scrub personal contact info, deactivate login, and mark active group memberships as LEFT while retaining accounting ledger integrity.
             </p>
+          ) : actionType === 'REJECT_DELETION' ? (
+            <p>
+              Rejecting the deletion request for <strong>{targetBuyer?.full_name}</strong> keeps their buyer account active and logs your compliance reason.
+            </p>
           ) : (
             <p>
               Apply <strong>{actionType}</strong> to buyer <strong>{targetBuyer?.full_name}</strong>?
@@ -374,8 +406,8 @@ export function AdminBuyersPage() {
           )
         }
         confirmLabel="Confirm Action"
-        confirmVariant={actionType === 'REACTIVATE' ? 'success' : 'danger'}
-        requireReason={actionType === 'SUSPEND' || actionType === 'DEACTIVATE'}
+        confirmVariant={actionType === 'REACTIVATE' || actionType === 'REJECT_DELETION' ? 'success' : 'danger'}
+        requireReason={actionType === 'SUSPEND' || actionType === 'DEACTIVATE' || actionType === 'REJECT_DELETION'}
         requirePassword={true}
         onConfirm={executeBuyerAction}
       />

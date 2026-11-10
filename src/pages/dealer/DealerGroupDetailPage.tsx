@@ -11,6 +11,7 @@ import {
   Building2,
   ArrowLeft,
   ArrowRight,
+  AlertCircle,
 } from 'lucide-react';
 
 export function DealerGroupDetailPage() {
@@ -19,21 +20,45 @@ export function DealerGroupDetailPage() {
 
   const [group, setGroup] = useState<Group | null>(null);
   const [quotes, setQuotes] = useState<Quotation[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
+
     async function load() {
-      if (!id) return;
-      setIsLoading(true);
-      const g = await fetchGroupById(id);
-      if (g) {
-        setGroup(g);
-        const qList = await fetchQuotationsForGroup(g.id);
-        setQuotes(qList);
+      if (!id) {
+        setIsLoading(false);
+        return;
       }
-      setIsLoading(false);
+
+      setIsLoading(true);
+      setLoadError(null);
+      try {
+        const g = await fetchGroupById(id);
+        if (cancelled) return;
+        if (g) {
+          setGroup(g);
+          const qList = await fetchQuotationsForGroup(g.id);
+          if (!cancelled) {
+            setQuotes(qList);
+          }
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : 'Unable to load group tender details.');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
     }
+
     load();
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   if (isLoading) {
@@ -44,11 +69,14 @@ export function DealerGroupDetailPage() {
     );
   }
 
-  if (!group) {
+  if (loadError || !group) {
     return (
       <DealerLayout>
         <div className="py-20 text-center space-y-3">
-          <h2 className="text-lg font-bold text-slate-900">Group tender not found</h2>
+          <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
+          <h2 className="text-lg font-bold text-slate-900">
+            {loadError || 'Group tender not found'}
+          </h2>
           <Link to="/dealer/groups">
             <Button variant="secondary" size="sm">Back to Eligible Groups</Button>
           </Link>
@@ -57,13 +85,13 @@ export function DealerGroupDetailPage() {
     );
   }
 
-  // Calculate live ranking by complete on-road price (Section 3: "you are currently #2 of 4")
+  const isOpenGroup = ['FORMING', 'OPEN_FOR_QUOTES', 'OFFERS_RECEIVED'].includes(group.status);
   const validCompleteQuotes = quotes
-    .filter((q) => q.is_complete && !isQuoteExpired(q.validity_date))
+    .filter((q) => q.is_complete && q.is_active !== false && !isQuoteExpired(q.validity_date))
     .sort((a, b) => a.on_road_price - b.on_road_price);
 
-  const myQuote = quotes.find((q) => q.dealership_id === dealership?.id) || quotes[0];
-  const myRank = validCompleteQuotes.findIndex((q) => q.id === myQuote?.id) + 1;
+  const myQuote = quotes.find((q) => q.dealership_id === dealership?.id) || null;
+  const myRank = myQuote ? validCompleteQuotes.findIndex((q) => q.id === myQuote.id) + 1 : 0;
 
   return (
     <DealerLayout>
@@ -78,7 +106,7 @@ export function DealerGroupDetailPage() {
 
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant="brand">{group.variant?.model?.manufacturer?.name}</Badge>
                 <h1 className="text-2xl font-bold tracking-tight text-slate-900">
                   {group.variant?.model?.name} — {group.variant?.name}
@@ -86,16 +114,18 @@ export function DealerGroupDetailPage() {
               </div>
               <p className="text-xs text-slate-500 mt-1">
                 District: <strong>{group.district?.name}</strong> ·{' '}
-                <strong>{group.member_count || 1} Active Buyers</strong> ·{' '}
+                <strong>{group.member_count ?? 0} Active Buyers</strong> ·{' '}
                 <strong className="text-emerald-700">{group.bookings_so_far || 0} Bookings so far</strong>
               </p>
             </div>
 
-            <Link to={`/dealer/groups/${group.id}/quote`}>
-              <Button variant="primary" size="md" rightIcon={<ArrowRight className="w-4 h-4" />}>
-                {myQuote ? 'Revise Your Quotation' : 'Submit Quotation'}
-              </Button>
-            </Link>
+            {isOpenGroup && dealership?.status === 'VERIFIED' && (
+              <Link to={`/dealer/groups/${group.id}/quote`}>
+                <Button variant="primary" size="md" rightIcon={<ArrowRight className="w-4 h-4" />}>
+                  {myQuote ? 'Revise Your Quotation' : 'Submit Quotation'}
+                </Button>
+              </Link>
+            )}
           </div>
         </div>
 
@@ -140,6 +170,11 @@ export function DealerGroupDetailPage() {
             </div>
           </CardHeader>
           <CardContent className="p-0">
+            {quotes.length === 0 ? (
+              <div className="p-10 text-center text-xs text-slate-500">
+                No dealerships have submitted active quotations for this group yet. Be the first verified showroom to publish a quote.
+              </div>
+            ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
@@ -204,6 +239,7 @@ export function DealerGroupDetailPage() {
                 </tbody>
               </table>
             </div>
+            )}
           </CardContent>
         </Card>
       </div>

@@ -155,7 +155,7 @@ export function AdminBookingDetailPage() {
 
   const elapsedDays = Math.floor((Date.now() - new Date(booking.created_at).getTime()) / (1000 * 60 * 60 * 24));
   const fallbackEligible = booking.status === 'PAID' && elapsedDays >= fallbackDays;
-  const canForceCancel = booking.status === 'PAID' || booking.status === 'PENDING';
+  const canForceCancel = booking.status === 'PAID';
   const expectedFeeRefund = feeRefundOnFault ? Number(booking.platform_fee) : 0;
   const expectedTotalRefund = Number(booking.booking_amount) + expectedFeeRefund;
   const isDealerSuspended = Boolean(booking.dealer_suspended || booking.dealership?.status === 'SUSPENDED');

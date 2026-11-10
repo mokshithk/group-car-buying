@@ -4,7 +4,12 @@ import { supabase } from '@/lib/supabase';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { DataTable, ColumnDef } from '@/components/admin/DataTable';
 import { ReAuthModal } from '@/components/admin/ReAuthModal';
-import { buildCsvContent, triggerCsvDownload, extractErrorMessage } from '@/lib/adminHelpers';
+import {
+  buildCsvContent,
+  triggerCsvDownload,
+  extractErrorMessage,
+  sanitizePostgrestSearch,
+} from '@/lib/adminHelpers';
 import { Dealership, DealershipStatus, District } from '@/types';
 import { formatDate } from '@/lib/formatters';
 import { useToast } from '@/components/ui/Toast';
@@ -87,7 +92,7 @@ export function AdminDealersPage() {
         query = query.eq('status', statusFilter);
       }
 
-      const cleanQ = searchQuery.trim();
+      const cleanQ = sanitizePostgrestSearch(searchQuery);
       if (cleanQ) {
         query = query.or(
           `name.ilike.%${cleanQ}%,gst_number.ilike.%${cleanQ}%,contact_email.ilike.%${cleanQ}%,contact_phone.ilike.%${cleanQ}%`
@@ -167,10 +172,17 @@ export function AdminDealersPage() {
   };
 
   const handleExportCsv = async () => {
-    const { data, error: expErr } = await supabase
-      .from('dealerships')
-      .select('*')
-      .order('created_at', { ascending: false });
+    let expQuery = supabase.from('dealerships').select('*');
+    if (statusFilter !== 'ALL') {
+      expQuery = expQuery.eq('status', statusFilter);
+    }
+    const cleanQ = sanitizePostgrestSearch(searchQuery);
+    if (cleanQ) {
+      expQuery = expQuery.or(
+        `name.ilike.%${cleanQ}%,gst_number.ilike.%${cleanQ}%,contact_email.ilike.%${cleanQ}%,contact_phone.ilike.%${cleanQ}%`
+      );
+    }
+    const { data, error: expErr } = await expQuery.order('created_at', { ascending: false });
     if (expErr || !data) {
       toast({ type: 'error', title: 'Export Failed', message: expErr?.message });
       return;

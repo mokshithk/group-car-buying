@@ -4,6 +4,7 @@ import { useAuth } from '@/context/AuthContext';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { ReAuthModal } from '@/components/admin/ReAuthModal';
 import { validatePlatformSetting } from '@/lib/adminHelpers';
+import { invalidatePlatformSettingsCache } from '@/lib/catalogService';
 import { useToast } from '@/components/ui/Toast';
 import { Button, Badge, Input } from '@/components/ui';
 import { Save, Lock, Info, Loader2 } from 'lucide-react';
@@ -130,6 +131,8 @@ export function AdminSettingsPage() {
       p_value: pendingUpdate.newValue,
     });
     if (rpcErr) throw new Error(rpcErr.message);
+
+    invalidatePlatformSettingsCache();
 
     toast({
       type: 'success',

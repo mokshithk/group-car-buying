@@ -191,7 +191,7 @@ export function AdminDealerDetailPage() {
                     <span className="text-[10px] font-bold uppercase text-slate-400 block">Primary District</span>
                     <span className="flex items-center gap-1">
                       <MapPin className="w-3.5 h-3.5 text-slate-400" />
-                      {districtLookup.get(dealer.district_id) || dealer.district_id}
+                      {dealer.district_id ? districtLookup.get(dealer.district_id) || dealer.district_id : '—'}
                     </span>
                   </div>
                   <div>
@@ -232,7 +232,7 @@ export function AdminDealerDetailPage() {
                     {dealer.status === 'PENDING' ? 'Approve Showroom' : 'Reactivate Showroom'}
                   </Button>
                 )}
-                {dealer.status !== 'REJECTED' && (
+                {dealer.status === 'PENDING' && (
                   <Button
                     variant="danger"
                     size="sm"
@@ -376,6 +376,47 @@ export function AdminDealerDetailPage() {
                       <div className="flex items-center gap-1.5">
                         {b.dealer_suspended && <Badge variant="danger" size="sm">Dealer Suspended</Badge>}
                         <Badge variant="default" size="sm">{b.status}</Badge>
+                      </div>
+                    </Link>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="border-slate-200 lg:col-span-2">
+              <CardHeader className="pb-2 border-b border-slate-100">
+                <CardTitle className="text-sm">Customer Reports &amp; Disputes ({reports.length})</CardTitle>
+              </CardHeader>
+              <CardContent className="p-0 divide-y divide-slate-100 text-xs max-h-64 overflow-y-auto">
+                {reports.length === 0 ? (
+                  <div className="p-6 text-slate-500 text-center">No customer dispute reports filed against this showroom.</div>
+                ) : (
+                  reports.map((rep) => (
+                    <Link
+                      key={rep.id}
+                      to={`/admin/reports/${rep.id}`}
+                      className="px-4 py-3 flex items-center justify-between gap-4 hover:bg-slate-50"
+                    >
+                      <div className="min-w-0">
+                        <div className="font-semibold text-slate-900 truncate">{rep.reason}</div>
+                        <div className="text-[11px] text-slate-500 truncate">{rep.details}</div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Badge
+                          variant={
+                            rep.status === 'RESOLVED'
+                              ? 'success'
+                              : rep.status === 'REJECTED'
+                              ? 'default'
+                              : 'danger'
+                          }
+                          size="sm"
+                        >
+                          {rep.status || 'OPEN'}
+                        </Badge>
+                        <span className="text-[11px] text-slate-400 tabular-nums">
+                          {formatDateTime(rep.created_at)}
+                        </span>
                       </div>
                     </Link>
                   ))

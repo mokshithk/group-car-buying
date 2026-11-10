@@ -1,70 +1,98 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { DealerLayout } from '@/components/layout/DealerLayout';
 import { Button, Badge, Card } from '@/components/ui';
+import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/Toast';
-import { Bell, CheckCheck, Trash2, Tag, ShoppingBag, Users, PhoneCall, RotateCcw } from 'lucide-react';
-
-interface DealerAlert {
-  id: string;
-  title: string;
-  message: string;
-  type: 'NEW_GROUP' | 'PRICE_CHANGE' | 'NEW_LEAD' | 'NEW_BOOKING' | 'BUYER_CANCEL';
-  read: boolean;
-  timestamp: string;
-  link?: string;
-}
+import { supabase } from '@/lib/supabase';
+import { formatDateTime } from '@/lib/formatters';
+import { Notification } from '@/types';
+import {
+  Bell,
+  CheckCheck,
+  Trash2,
+  Tag,
+  ShoppingBag,
+  Users,
+  PhoneCall,
+  RotateCcw,
+  AlertCircle,
+} from 'lucide-react';
 
 export function DealerNotificationsPage() {
+  const { user } = useAuth();
   const { toast } = useToast();
 
-  const [alerts, setAlerts] = useState<DealerAlert[]>([
-    {
-      id: 'da-1',
-      title: 'New Confirmed Booking Received',
-      message: 'Buyer Rahul S. completed booking deposit for Tata Nexon Creative Plus DCA. Price locked at ₹14,24,000.',
-      type: 'NEW_BOOKING',
-      read: false,
-      timestamp: new Date(Date.now() - 40 * 60 * 1000).toISOString(),
-      link: '/dealer/bookings',
-    },
-    {
-      id: 'da-2',
-      title: 'Competitor Price Decrease Alert',
-      message: 'Southern Star Auto reduced on-road quotation to ₹14,08,000. Your rank is currently #2 of 4.',
-      type: 'PRICE_CHANGE',
-      read: false,
-      timestamp: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
-      link: '/dealer/groups',
-    },
-    {
-      id: 'da-3',
-      title: 'New Interested Buyer Lead',
-      message: 'Customer clicked "I\'m interested" on your quotation. Buyer phone number unlocked.',
-      type: 'NEW_LEAD',
-      read: true,
-      timestamp: new Date(Date.now() - 20 * 60 * 60 * 1000).toISOString(),
-      link: '/dealer/leads',
-    },
-    {
-      id: 'da-4',
-      title: 'New Eligible Buying Group',
-      message: 'Creta SX(O) Turbo DCT reached 2 members and 20 days elapsed. Tender is now visible for bidding.',
-      type: 'NEW_GROUP',
-      read: true,
-      timestamp: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-      link: '/dealer/groups',
-    },
-  ]);
+  const [alerts, setAlerts] = useState<Notification[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const handleMarkAllRead = () => {
+  const loadAlerts = useCallback(async () => {
+    if (!user) {
+      setIsLoading(false);
+      return;
+    }
+
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const { data, error } = await supabase
+        .from('notifications')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      if (error) throw error;
+      setAlerts((data || []) as Notification[]);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Unable to load dealership notifications.');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    loadAlerts();
+  }, [loadAlerts]);
+
+  const handleMarkOneRead = async (id: string) => {
+    setAlerts((prev) => prev.map((a) => (a.id === id ? { ...a, read: true } : a)));
+    await supabase.from('notifications').update({ read: true }).eq('id', id);
+  };
+
+  const handleMarkAllRead = async () => {
+    if (!user) return;
+    const { error } = await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('user_id', user.id)
+      .eq('read', false);
+
+    if (error) {
+      toast({ type: 'error', title: 'Update Failed', message: error.message });
+      return;
+    }
     setAlerts((prev) => prev.map((a) => ({ ...a, read: true })));
     toast({ type: 'info', title: 'Alerts marked as read' });
   };
 
-  const handleClear = () => {
+  const handleClear = async () => {
+    if (!user) return;
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('user_id', user.id);
+
+    if (error) {
+      toast({ type: 'error', title: 'Clear Failed', message: error.message });
+      return;
+    }
     setAlerts([]);
     toast({ type: 'info', title: 'Alerts cleared' });
   };
+
+  const hasUnread = alerts.some((a) => !a.read);
 
   return (
     <DealerLayout>
@@ -84,14 +112,16 @@ export function DealerNotificationsPage() {
 
           {alerts.length > 0 && (
             <div className="flex items-center gap-2">
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={handleMarkAllRead}
-                leftIcon={<CheckCheck className="w-4 h-4" />}
-              >
-                Mark all read
-              </Button>
+              {hasUnread && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={handleMarkAllRead}
+                  leftIcon={<CheckCheck className="w-4 h-4" />}
+                >
+                  Mark all read
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="sm"
@@ -105,7 +135,16 @@ export function DealerNotificationsPage() {
           )}
         </div>
 
-        {alerts.length === 0 ? (
+        {loadError && (
+          <div className="p-4 rounded-xl bg-red-50 border border-red-200 flex items-center gap-2.5 text-xs text-red-800">
+            <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+            <span>{loadError}</span>
+          </div>
+        )}
+
+        {isLoading ? (
+          <div className="py-16 text-center text-slate-400">Loading alerts...</div>
+        ) : alerts.length === 0 ? (
           <Card className="text-center py-16 p-8">
             <Bell className="w-12 h-12 text-slate-300 mx-auto mb-3" />
             <h3 className="text-base font-bold text-slate-800">No alerts right now</h3>
@@ -123,7 +162,7 @@ export function DealerNotificationsPage() {
                   <Tag className="w-4 h-4 text-blue-600" />
                 ) : a.type === 'NEW_LEAD' ? (
                   <PhoneCall className="w-4 h-4 text-amber-600" />
-                ) : a.type === 'NEW_GROUP' ? (
+                ) : a.type === 'NEW_GROUP' || a.type === 'NEW_ELIGIBLE_GROUP' ? (
                   <Users className="w-4 h-4 text-brand-600" />
                 ) : (
                   <RotateCcw className="w-4 h-4 text-rose-600" />
@@ -144,17 +183,43 @@ export function DealerNotificationsPage() {
                     <div className="flex-1 min-w-0 text-xs">
                       <div className="flex items-center justify-between gap-2">
                         <h4 className="font-bold text-slate-900">{a.title}</h4>
-                        {!a.read && <Badge variant="brand" size="sm">New</Badge>}
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-[10px] text-slate-400">
+                            {formatDateTime(a.created_at)}
+                          </span>
+                          {!a.read && <Badge variant="brand" size="sm">New</Badge>}
+                        </div>
                       </div>
                       <p className="text-slate-600 mt-0.5 leading-relaxed">{a.message}</p>
-                      {a.link && (
-                        <a
-                          href={a.link}
-                          className="inline-block mt-2 font-semibold text-brand-600 hover:underline"
-                        >
-                          View in Portal →
-                        </a>
-                      )}
+                      <div className="flex items-center gap-3 mt-2">
+                        {a.link_url &&
+                          (a.link_url.startsWith('http') ? (
+                            <a
+                              href={a.link_url}
+                              onClick={() => handleMarkOneRead(a.id)}
+                              className="font-semibold text-brand-600 hover:underline"
+                            >
+                              View in Portal →
+                            </a>
+                          ) : (
+                            <Link
+                              to={a.link_url}
+                              onClick={() => handleMarkOneRead(a.id)}
+                              className="font-semibold text-brand-600 hover:underline"
+                            >
+                              View in Portal →
+                            </Link>
+                          ))}
+                        {!a.read && (
+                          <button
+                            type="button"
+                            onClick={() => handleMarkOneRead(a.id)}
+                            className="text-slate-400 hover:text-slate-700 font-medium"
+                          >
+                            Mark read
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </Card>

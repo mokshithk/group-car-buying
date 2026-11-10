@@ -30,7 +30,7 @@ interface AdminBookingRow {
   } | null;
 }
 
-type BookingTab = 'ALL' | 'PAID' | 'DELIVERED' | 'CANCELLED' | 'DEALER_SUSPENDED';
+type BookingTab = 'ALL' | 'PENDING' | 'PAID' | 'DELIVERED' | 'CANCELLED' | 'DEALER_SUSPENDED';
 
 export function AdminBookingsPage() {
   const { toast } = useToast();
@@ -71,6 +71,7 @@ export function AdminBookingsPage() {
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     const list = bookings.filter((b) => {
+      if (tab === 'PENDING' && b.status !== 'PENDING') return false;
       if (tab === 'PAID' && b.status !== 'PAID') return false;
       if (tab === 'DELIVERED' && b.status !== 'DELIVERED') return false;
       if (tab === 'CANCELLED' && !b.status.startsWith('CANCELLED') && b.status !== 'REFUNDED') return false;
@@ -126,11 +127,15 @@ export function AdminBookingsPage() {
     ]);
     const csv = buildCsvContent(headers, rows);
     triggerCsvDownload(`autogroup-bookings-${new Date().toISOString().slice(0, 10)}.csv`, csv);
-    await supabase.rpc('admin_log_export', {
-      p_export_type: 'bookings_list',
-      p_row_count: filtered.length,
-      p_filters: { tab, searchQuery },
-    });
+    try {
+      await supabase.rpc('admin_log_export', {
+        p_export_type: 'bookings_list',
+        p_row_count: filtered.length,
+        p_filters: { tab, searchQuery },
+      });
+    } catch {
+      // ignore non-critical
+    }
     toast({ type: 'success', title: 'CSV Downloaded', message: `Exported ${filtered.length} bookings.` });
   };
 
@@ -268,6 +273,7 @@ export function AdminBookingsPage() {
           tabs={[
             { id: 'ALL', label: `All (${bookings.length})` },
             { id: 'PAID', label: `Active / Paid (${bookings.filter((b) => b.status === 'PAID').length})` },
+            { id: 'PENDING', label: `Pending (${bookings.filter((b) => b.status === 'PENDING').length})` },
             { id: 'DELIVERED', label: 'Delivered' },
             { id: 'CANCELLED', label: 'Cancelled / Refunded' },
             { id: 'DEALER_SUSPENDED', label: `Dealer Suspended (${suspendedCount})` },

@@ -7,13 +7,14 @@ import { fetchDealerInterests } from '@/lib/bookingService';
 import { supabase } from '@/lib/supabase';
 import { formatINR, formatDateTime } from '@/lib/formatters';
 import { Interest } from '@/types';
-import { PhoneCall, User, Phone, CheckCircle2, Clock, ShieldCheck } from 'lucide-react';
+import { PhoneCall, User, Phone, CheckCircle2, Clock, ShieldCheck, AlertCircle } from 'lucide-react';
 
 export function DealerLeadsPage() {
   const { dealership } = useAuth();
   const { toast } = useToast();
 
   const [leads, setLeads] = useState<Interest[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const loadLeads = useCallback(async () => {
@@ -22,9 +23,15 @@ export function DealerLeadsPage() {
       return;
     }
     setIsLoading(true);
-    const myLeads = await fetchDealerInterests(dealership.id);
-    setLeads(myLeads);
-    setIsLoading(false);
+    setLoadError(null);
+    try {
+      const myLeads = await fetchDealerInterests(dealership.id);
+      setLeads(myLeads);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Unable to load customer leads.');
+    } finally {
+      setIsLoading(false);
+    }
   }, [dealership]);
 
   useEffect(() => {
@@ -76,6 +83,13 @@ export function DealerLeadsPage() {
           </span>
         </div>
 
+        {loadError && (
+          <div className="p-4 rounded-xl bg-red-50 border border-red-200 flex items-center gap-2.5 text-xs text-red-800">
+            <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+            <span>{loadError}</span>
+          </div>
+        )}
+
         {isLoading ? (
           <div className="py-16 text-center text-slate-400">Loading leads...</div>
         ) : leads.length === 0 ? (
@@ -111,9 +125,13 @@ export function DealerLeadsPage() {
                     <div className="flex flex-wrap items-center gap-4 text-slate-600">
                       <div className="flex items-center gap-1.5 font-bold text-slate-900">
                         <Phone className="w-3.5 h-3.5 text-emerald-600" />
-                        <a href={`tel:${lead.buyer?.phone}`} className="hover:text-brand-600 underline">
-                          {lead.buyer?.phone || '+91 98765 43210'}
-                        </a>
+                        {lead.buyer?.phone ? (
+                          <a href={`tel:${lead.buyer.phone}`} className="hover:text-brand-600 underline">
+                            {lead.buyer.phone}
+                          </a>
+                        ) : (
+                          <span className="text-slate-400 font-normal">Phone unavailable</span>
+                        )}
                       </div>
                       <span>•</span>
                       <span>Expressed on {formatDateTime(lead.created_at)}</span>

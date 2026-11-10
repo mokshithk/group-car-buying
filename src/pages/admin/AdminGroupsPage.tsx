@@ -16,6 +16,8 @@ interface AdminGroupRow extends Group {
 
 type GroupTab = 'ALL' | GroupStatus | 'SUSPICIOUS';
 
+const OPEN_GROUP_STATUSES = new Set(['FORMING', 'OPEN_FOR_QUOTES', 'OFFERS_RECEIVED']);
+
 export function AdminGroupsPage() {
   const { toast } = useToast();
   const [isExpiring, setIsExpiring] = useState(false);
@@ -67,8 +69,11 @@ export function AdminGroupsPage() {
       const validSort = ['created_at', 'status', 'target_members'];
       query = query.order(validSort.includes(sortKey) ? sortKey : 'created_at', { ascending: sortDir === 'asc' });
 
-      const from = (page - 1) * pageSize;
-      query = query.range(from, from + pageSize - 1);
+      const q = searchQuery.trim().toLowerCase();
+      if (!q) {
+        const from = (page - 1) * pageSize;
+        query = query.range(from, from + pageSize - 1);
+      }
 
       const { data, count, error: fetchErr } = await query;
       if (fetchErr) throw fetchErr;
@@ -77,7 +82,9 @@ export function AdminGroupsPage() {
         const activeMembers = (g.group_members || []).filter((m: any) => m.status === 'ACTIVE');
         const activeCount = activeMembers.length;
         const daysOld = Math.floor((Date.now() - new Date(g.created_at).getTime()) / 86400000);
-        const visible = activeCount >= visThreshold || (activeCount === 2 && daysOld >= visDays);
+        const visible =
+          OPEN_GROUP_STATUSES.has(g.status) &&
+          (activeCount >= visThreshold || (activeCount === 2 && daysOld >= visDays));
         return {
           ...g,
           active_members_count: activeCount,
@@ -85,7 +92,6 @@ export function AdminGroupsPage() {
         };
       });
 
-      const q = searchQuery.trim().toLowerCase();
       const searchFiltered = q
         ? mapped.filter(
             (g) =>
@@ -96,8 +102,14 @@ export function AdminGroupsPage() {
           )
         : mapped;
 
-      setGroups(searchFiltered);
-      setTotalCount(q ? searchFiltered.length : count || 0);
+      if (q) {
+        const from = (page - 1) * pageSize;
+        setGroups(searchFiltered.slice(from, from + pageSize));
+        setTotalCount(searchFiltered.length);
+      } else {
+        setGroups(mapped);
+        setTotalCount(count || 0);
+      }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to load groups.');
     } finally {
@@ -161,6 +173,8 @@ export function AdminGroupsPage() {
             variant={
               g.status === 'OPEN_FOR_QUOTES' || g.status === 'OFFERS_RECEIVED'
                 ? 'success'
+                : g.status === 'COMPLETED'
+                ? 'default'
                 : g.status === 'CANCELLED' || g.status === 'EXPIRED'
                 ? 'danger'
                 : 'warning'
@@ -253,6 +267,7 @@ export function AdminGroupsPage() {
             { id: 'FORMING', label: 'Forming' },
             { id: 'OPEN_FOR_QUOTES', label: 'Open Quotes' },
             { id: 'OFFERS_RECEIVED', label: 'Offers' },
+            { id: 'COMPLETED', label: 'Completed' },
             { id: 'CANCELLED', label: 'Cancelled' },
             { id: 'EXPIRED', label: 'Expired' },
             { id: 'SUSPICIOUS', label: 'Suspicious' },

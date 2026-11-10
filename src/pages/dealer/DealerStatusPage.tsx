@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -11,7 +11,7 @@ export function DealerStatusPage() {
   const [dealership, setDealership] = useState<Dealership | null>(contextDealership);
   const navigate = useNavigate();
 
-  const loadStatus = async () => {
+  const loadStatus = useCallback(async () => {
     if (!user) return;
     try {
       const { data: du } = await supabase
@@ -51,11 +51,11 @@ export function DealerStatusPage() {
         console.error('Failed to load dealer status:', err);
       }
     }
-  };
+  }, [user, navigate]);
 
   useEffect(() => {
     loadStatus();
-  }, [user]);
+  }, [loadStatus]);
 
   const status = dealership?.status || 'PENDING';
   const isRejected = status === 'REJECTED';
@@ -90,7 +90,7 @@ export function DealerStatusPage() {
             <CardDescription className="text-sm font-medium text-slate-600 max-w-sm mx-auto leading-relaxed mt-1">
               {isRejected
                 ? 'Your dealership registration could not be verified by AutoGroup administration.'
-                : 'Your dealership account has been temporarily suspended from bidding on tender tenders.'}
+                : 'Your dealership account has been temporarily suspended from bidding on group tenders.'}
             </CardDescription>
           </CardHeader>
 
@@ -114,7 +114,8 @@ export function DealerStatusPage() {
                   Suspension Notice:
                 </span>
                 <p className="text-xs text-amber-800 leading-relaxed font-medium">
-                  Access to live buyer groups and quotation submission is temporarily paused pending administrative review.
+                  {dealership?.suspension_reason ||
+                    'Access to live buyer groups and quotation submission is temporarily paused pending administrative review.'}
                 </p>
               </div>
             )}

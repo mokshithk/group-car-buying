@@ -29,6 +29,7 @@ import { BuyerPreferencesPage } from '@/pages/buyer/BuyerPreferencesPage';
 import { DealerDashboardPage } from '@/pages/dealer/DealerDashboardPage';
 import { DealerGroupsPage } from '@/pages/dealer/DealerGroupsPage';
 import { DealerGroupDetailPage } from '@/pages/dealer/DealerGroupDetailPage';
+import { DealerQuotationsPage } from '@/pages/dealer/DealerQuotationsPage';
 import { SubmitQuotePage } from '@/pages/dealer/SubmitQuotePage';
 import { DealerLeadsPage } from '@/pages/dealer/DealerLeadsPage';
 import { DealerBookingsPage } from '@/pages/dealer/DealerBookingsPage';
@@ -236,6 +237,14 @@ export default function App() {
                   element={
                     <ProtectedRoute allowedRoles={['dealer']} requireVerifiedDealer>
                       <SubmitQuotePage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/dealer/quotes"
+                  element={
+                    <ProtectedRoute allowedRoles={['dealer']} requireVerifiedDealer>
+                      <DealerQuotationsPage />
                     </ProtectedRoute>
                   }
                 />

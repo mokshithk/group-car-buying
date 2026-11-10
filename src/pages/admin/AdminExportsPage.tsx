@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { AdminLayout } from '@/components/admin/AdminLayout';
-import { buildCsvContent, triggerCsvDownload } from '@/lib/adminHelpers';
+import { buildCsvContent, triggerCsvDownload, toLocalDateKey } from '@/lib/adminHelpers';
 import { useToast } from '@/components/ui/Toast';
 import { Button, Input } from '@/components/ui';
 import { Download, Clock } from 'lucide-react';
@@ -15,8 +15,8 @@ export function AdminExportsPage() {
   const [isExpiring, setIsExpiring] = useState(false);
 
   const dateFilterIso = () => ({
-    from: fromDate ? `${fromDate}T00:00:00Z` : null,
-    to: toDate ? `${toDate}T23:59:59Z` : null,
+    from: fromDate ? new Date(`${fromDate}T00:00:00`).toISOString() : null,
+    to: toDate ? new Date(`${toDate}T23:59:59.999`).toISOString() : null,
   });
 
   const exportDataset = async (type: 'buyers' | 'dealers' | 'bookings' | 'reports' | 'revenue') => {
@@ -156,7 +156,8 @@ export function AdminExportsPage() {
 
         const byMonth = new Map<string, { bookings: number; grossFees: number; refundedFees: number; depositVolume: number }>();
         for (const b of bRes.data || []) {
-          const m = String(b.created_at).slice(0, 7);
+          if (b.status === 'PENDING') continue;
+          const m = toLocalDateKey(String(b.created_at)).slice(0, 7);
           const cur = byMonth.get(m) || { bookings: 0, grossFees: 0, refundedFees: 0, depositVolume: 0 };
           cur.bookings += 1;
           cur.grossFees += Number(b.platform_fee) || 0;
@@ -166,7 +167,7 @@ export function AdminExportsPage() {
         for (const r of rRes.data || []) {
           if (from && String(r.created_at) < from) continue;
           if (to && String(r.created_at) > to) continue;
-          const m = String(r.created_at).slice(0, 7);
+          const m = toLocalDateKey(String(r.created_at)).slice(0, 7);
           const cur = byMonth.get(m) || { bookings: 0, grossFees: 0, refundedFees: 0, depositVolume: 0 };
           cur.refundedFees += Number(r.platform_fee_refunded) || 0;
           byMonth.set(m, cur);

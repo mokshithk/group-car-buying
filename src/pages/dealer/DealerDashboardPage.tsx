@@ -3,10 +3,13 @@ import { Link } from 'react-router-dom';
 import { DealerLayout } from '@/components/layout/DealerLayout';
 import { Button, Badge, Card } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
-import { fetchGroupsForDistrict } from '@/lib/groupService';
+import { fetchDealerEligibleGroups } from '@/lib/groupService';
+import { fetchDealerQuotations, isQuoteExpired } from '@/lib/quoteService';
 import { fetchDealerBookings, fetchDealerInterests } from '@/lib/bookingService';
-import { formatINR } from '@/lib/formatters';
-import { Group } from '@/types';
+import { fetchPlatformSettings, DEFAULT_PLATFORM_SETTINGS } from '@/lib/catalogService';
+import { supabase } from '@/lib/supabase';
+import { formatINR, formatDateTime } from '@/lib/formatters';
+import { Group, Notification } from '@/types';
 import {
   Users,
   Tag,
@@ -14,44 +17,94 @@ import {
   ShoppingBag,
   ShieldCheck,
   ArrowRight,
+  Bell,
+  AlertCircle,
 } from 'lucide-react';
 
 export function DealerDashboardPage() {
-  const { dealership } = useAuth();
-  const districtId = dealership?.district_id || 'd1111111-1111-1111-1111-111111111101';
+  const { user, dealership } = useAuth();
 
   const [eligibleGroups, setEligibleGroups] = useState<Group[]>([]);
+  const [activeQuotesCount, setActiveQuotesCount] = useState(0);
   const [totalLeads, setTotalLeads] = useState(0);
   const [totalBookings, setTotalBookings] = useState(0);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [retentionPercent, setRetentionPercent] = useState<number>(
+    DEFAULT_PLATFORM_SETTINGS.buyerCancelRetentionPercent
+  );
+  const [feeRefundOnFault, setFeeRefundOnFault] = useState<boolean>(
+    DEFAULT_PLATFORM_SETTINGS.feeRefundOnDealerFault
+  );
+  const [visibilityThreshold, setVisibilityThreshold] = useState<number>(
+    DEFAULT_PLATFORM_SETTINGS.visibilityMemberThreshold
+  );
+  const [visibilityDays, setVisibilityDays] = useState<number>(
+    DEFAULT_PLATFORM_SETTINGS.groupVisibilityDaysFor2Members
+  );
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    async function load() {
-      setIsLoading(true);
-      const groups = await fetchGroupsForDistrict(districtId);
-      // Dealers only see groups that meet visibility rule:
-      // (>= 3 members OR == 2 members after 20 days)
-      const visible = groups.filter(
-        (g) => (g.member_count || 1) >= 3 || g.is_visible_to_dealers
-      );
-      setEligibleGroups(visible);
+    let cancelled = false;
 
-      if (dealership) {
-        const [leads, bks] = await Promise.all([
-          fetchDealerInterests(dealership.id),
-          fetchDealerBookings(dealership.id),
-        ]);
-        setTotalLeads(leads.length);
-        setTotalBookings(bks.length);
-      } else {
-        setTotalLeads(0);
-        setTotalBookings(0);
+    async function load() {
+      if (!dealership?.id || !user?.id) {
+        setIsLoading(false);
+        return;
       }
 
-      setIsLoading(false);
+      setIsLoading(true);
+      setLoadError(null);
+      try {
+        const districtIds = Array.from(
+          new Set([dealership.district_id, ...(dealership.districts || [])].filter(Boolean))
+        ) as string[];
+
+        const [visible, myQuotes, leads, bks, settings, notifRes] = await Promise.all([
+          fetchDealerEligibleGroups(districtIds, dealership.brands || []),
+          fetchDealerQuotations(dealership.id),
+          fetchDealerInterests(dealership.id),
+          fetchDealerBookings(dealership.id),
+          fetchPlatformSettings(),
+          supabase
+            .from('notifications')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false })
+            .limit(5),
+        ]);
+
+        if (cancelled) return;
+
+        setEligibleGroups(visible);
+        setActiveQuotesCount(
+          myQuotes.filter((q) => q.is_active !== false && !isQuoteExpired(q.validity_date)).length
+        );
+        setTotalLeads(leads.length);
+        setTotalBookings(bks.length);
+        setRetentionPercent(settings.buyerCancelRetentionPercent);
+        setFeeRefundOnFault(settings.feeRefundOnDealerFault);
+        setVisibilityThreshold(settings.visibilityMemberThreshold);
+        setVisibilityDays(settings.groupVisibilityDaysFor2Members);
+        if (!notifRes.error && notifRes.data) {
+          setNotifications(notifRes.data as Notification[]);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : 'Unable to load dealership overview.');
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
     }
+
     load();
-  }, [districtId, dealership]);
+    return () => {
+      cancelled = true;
+    };
+  }, [dealership, user?.id]);
 
   return (
     <DealerLayout>
@@ -76,6 +129,13 @@ export function DealerDashboardPage() {
           </div>
         </div>
 
+        {loadError && (
+          <div className="p-4 rounded-xl bg-red-50 border border-red-200 flex items-center gap-2.5 text-xs text-red-800">
+            <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+            <span>{loadError}</span>
+          </div>
+        )}
+
         {/* DEALER STATUTORY DISCLAIMERS BANNER (Section 3: Mandatory Dealer Disclaimers) */}
         <div className="p-4 rounded-2xl bg-slate-900 text-white space-y-2.5 text-xs shadow-card">
           <div className="flex items-center gap-2 font-bold text-brand-400">
@@ -88,12 +148,12 @@ export function DealerDashboardPage() {
               Every submitted quote is legally locked upon buyer booking and must be honored until delivery.
             </div>
             <div className="p-2.5 rounded-lg bg-slate-800/80 border border-slate-700/60">
-              <strong className="text-white block mb-0.5">2. 5% Retention on Buyer Cancel</strong>
-              If a buyer cancels, 5% of the booking deposit is retained by your showroom as an administrative fee.
+              <strong className="text-white block mb-0.5">2. {retentionPercent}% Retention on Buyer Cancel</strong>
+              If a buyer cancels, {retentionPercent}% of the booking deposit is retained by your showroom as an administrative fee.
             </div>
             <div className="p-2.5 rounded-lg bg-slate-800/80 border border-slate-700/60">
               <strong className="text-white block mb-0.5">3. 100% Refund on Dealer Fault</strong>
-              If your showroom cancels or alters the locked price, buyer receives 100% refund of deposit + fee.
+              If your showroom cancels or alters the locked price, buyer receives 100% refund of deposit{feeRefundOnFault ? ' + platform fee' : ''}.
             </div>
           </div>
         </div>
@@ -118,7 +178,7 @@ export function DealerDashboardPage() {
               <span className="text-xs font-semibold uppercase text-slate-500">Active Quotes</span>
               <Tag className="w-4 h-4 text-emerald-600" />
             </div>
-            <div className="text-2xl font-black text-slate-900 mt-2">2</div>
+            <div className="text-2xl font-black text-slate-900 mt-2">{activeQuotesCount}</div>
             <div className="text-[11px] text-slate-500 mt-1">Live in competition</div>
           </Card>
 
@@ -165,16 +225,16 @@ export function DealerDashboardPage() {
               <Users className="w-10 h-10 text-slate-300 mx-auto mb-2" />
               <h3 className="text-sm font-bold text-slate-800">No eligible groups currently</h3>
               <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
-                Groups become visible to dealers once they reach 3 members or 20 days with 2 members.
+                Groups become visible to dealers once they reach {visibilityThreshold} members or {visibilityDays} days with 2 members.
               </p>
             </Card>
           ) : (
             <div className="grid grid-cols-1 gap-4">
-              {eligibleGroups.map((g) => (
+              {eligibleGroups.slice(0, 5).map((g) => (
                 <Card key={g.id} className="p-5">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div className="space-y-1">
-                      <div className="flex items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
                         <Badge variant="brand" size="sm">
                           {g.variant?.model?.manufacturer?.name}
                         </Badge>
@@ -182,10 +242,12 @@ export function DealerDashboardPage() {
                           {g.variant?.model?.name} — {g.variant?.name}
                         </h3>
                         <Badge variant="success" size="sm">
-                          {g.member_count} Members Ready
+                          {g.member_count ?? 0} Members Ready
                         </Badge>
                       </div>
-                      <div className="text-xs text-slate-500 flex items-center gap-2">
+                      <div className="text-xs text-slate-500 flex flex-wrap items-center gap-2">
+                        <span>District: {g.district?.name || '—'}</span>
+                        <span>•</span>
                         <span>Indicative Ex-Showroom: {formatINR(g.variant?.ex_showroom_price)}</span>
                         <span>•</span>
                         <span>{g.bookings_so_far || 0} Bookings so far</span>
@@ -215,53 +277,43 @@ export function DealerDashboardPage() {
 
         {/* RECENT NOTIFICATIONS FEED FOR DEALERS */}
         <div className="space-y-4">
-          <h2 className="text-lg font-bold text-slate-900">Dealership Alerts</h2>
-          <Card className="divide-y divide-slate-100 p-2 text-xs">
-            <div className="p-3.5 flex items-start gap-3">
-              <div className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
-                <ShoppingBag className="w-4 h-4" />
-              </div>
-              <div className="flex-1">
-                <div className="font-semibold text-slate-900">
-                  New Customer Booking Received
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-bold text-slate-900">Dealership Alerts</h2>
+            <Link to="/dealer/notifications" className="text-xs font-semibold text-brand-600 hover:underline">
+              View all notifications
+            </Link>
+          </div>
+          {notifications.length === 0 ? (
+            <Card className="p-6 text-center text-xs text-slate-500">
+              <Bell className="w-6 h-6 text-slate-300 mx-auto mb-2" />
+              No new dealership alerts. Events for newly visible groups, competitor price revisions, buyer leads, and bookings appear here.
+            </Card>
+          ) : (
+            <Card className="divide-y divide-slate-100 p-2 text-xs">
+              {notifications.map((notif) => (
+                <div key={notif.id} className="p-3.5 flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-700 flex items-center justify-center shrink-0">
+                    {notif.type === 'NEW_BOOKING' ? (
+                      <ShoppingBag className="w-4 h-4 text-emerald-600" />
+                    ) : notif.type === 'PRICE_CHANGE' ? (
+                      <Tag className="w-4 h-4 text-blue-600" />
+                    ) : notif.type === 'NEW_LEAD' ? (
+                      <PhoneCall className="w-4 h-4 text-amber-600" />
+                    ) : (
+                      <Bell className="w-4 h-4 text-brand-600" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <div className="font-semibold text-slate-900">{notif.title}</div>
+                    <div className="text-slate-500 mt-0.5">{notif.message}</div>
+                    <div className="text-[10px] text-slate-400 mt-1">
+                      {formatDateTime(notif.created_at)}
+                    </div>
+                  </div>
                 </div>
-                <div className="text-slate-500 mt-0.5">
-                  Buyer <strong>Rahul Sharma</strong> confirmed booking for Tata Nexon Creative Plus DCA. Locked price: ₹14,24,000.
-                </div>
-                <div className="text-[10px] text-slate-400 mt-1">1 hour ago</div>
-              </div>
-            </div>
-
-            <div className="p-3.5 flex items-start gap-3">
-              <div className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
-                <Tag className="w-4 h-4" />
-              </div>
-              <div className="flex-1">
-                <div className="font-semibold text-slate-900">
-                  Competitor Revised Price in Nexon Group
-                </div>
-                <div className="text-slate-500 mt-0.5">
-                  Southern Star Auto submitted a revised quotation at ₹14,08,000. Your quote is currently ranked #2 of 4.
-                </div>
-                <div className="text-[10px] text-slate-400 mt-1">3 hours ago</div>
-              </div>
-            </div>
-
-            <div className="p-3.5 flex items-start gap-3">
-              <div className="w-8 h-8 rounded-full bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-                <PhoneCall className="w-4 h-4" />
-              </div>
-              <div className="flex-1">
-                <div className="font-semibold text-slate-900">
-                  New Interested Buyer Lead
-                </div>
-                <div className="text-slate-500 mt-0.5">
-                  Buyer expressed interest. View contact phone in your Leads manager.
-                </div>
-                <div className="text-[10px] text-slate-400 mt-1">1 day ago</div>
-              </div>
-            </div>
-          </Card>
+              ))}
+            </Card>
+          )}
         </div>
       </div>
     </DealerLayout>

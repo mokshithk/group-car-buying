@@ -51,11 +51,11 @@ export function AdminNotificationsPage() {
       setAlerts((nRes.data || []) as AdminNotificationRow[]);
       const dList = (dRes.data || []) as District[];
       setDistricts(dList);
-      if (dList.length > 0 && !districtId) setDistrictId(dList[0].id);
+      if (dList.length > 0) setDistrictId((prev) => prev || dList[0].id);
     } finally {
       setIsLoadingAlerts(false);
     }
-  }, [user?.id, districtId]);
+  }, [user?.id]);
 
   useEffect(() => {
     loadData();

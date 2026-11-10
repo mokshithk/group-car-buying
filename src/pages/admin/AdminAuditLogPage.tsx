@@ -92,8 +92,8 @@ export function AdminAuditLogPage() {
 
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    const fromMs = fromDate ? new Date(`${fromDate}T00:00:00Z`).getTime() : null;
-    const toMs = toDate ? new Date(`${toDate}T23:59:59Z`).getTime() : null;
+    const fromMs = fromDate ? new Date(`${fromDate}T00:00:00`).getTime() : null;
+    const toMs = toDate ? new Date(`${toDate}T23:59:59.999`).getTime() : null;
 
     return logs.filter((l) => {
       if (entityFilter && l.entity_type !== entityFilter) return false;
@@ -135,11 +135,15 @@ export function AdminAuditLogPage() {
     });
     const csv = buildCsvContent(headers, rows);
     triggerCsvDownload(`autogroup-audit-log-${new Date().toISOString().slice(0, 10)}.csv`, csv);
-    await supabase.rpc('admin_log_export', {
-      p_export_type: 'audit_log',
-      p_row_count: filtered.length,
-      p_filters: { entityFilter, actionFilter, fromDate, toDate },
-    });
+    try {
+      await supabase.rpc('admin_log_export', {
+        p_export_type: 'audit_log',
+        p_row_count: filtered.length,
+        p_filters: { entityFilter, actionFilter, fromDate, toDate },
+      });
+    } catch {
+      // ignore non-critical
+    }
     toast({ type: 'success', title: 'Audit Log Exported', message: `Downloaded ${filtered.length} rows.` });
   };
 

@@ -4,13 +4,14 @@ import { Badge, Card } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
 import { DealerRating, Report } from '@/types';
-import { Star, Flag, ShieldCheck, Loader2 } from 'lucide-react';
+import { Star, Flag, ShieldCheck, Loader2, AlertCircle } from 'lucide-react';
 
 export function DealerRatingsReportsPage() {
   const { dealership } = useAuth();
 
   const [ratings, setRatings] = useState<DealerRating[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -21,28 +22,37 @@ export function DealerRatingsReportsPage() {
 
     let cancelled = false;
     setIsLoading(true);
+    setLoadError(null);
 
     Promise.all([
       supabase
         .from('dealer_ratings')
-        .select('*')
+        .select('id, booking_id, dealership_id, buyer_id, rating, review, is_hidden, created_at')
         .eq('dealership_id', dealership.id)
         .eq('is_hidden', false)
         .order('created_at', { ascending: false }),
       supabase
         .from('reports')
-        .select('*')
+        .select('id, dealership_id, buyer_id, reason, details, status, action_taken, created_at')
         .eq('dealership_id', dealership.id)
         .order('created_at', { ascending: false }),
     ])
       .then(([ratRes, repRes]) => {
         if (cancelled) return;
+        if (ratRes.error) {
+          setLoadError(ratRes.error.message);
+        } else if (repRes.error) {
+          setLoadError(repRes.error.message);
+        }
         setRatings((ratRes.data || []) as DealerRating[]);
         setReports((repRes.data || []) as Report[]);
         setIsLoading(false);
       })
-      .catch(() => {
-        if (!cancelled) setIsLoading(false);
+      .catch((err) => {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : 'Unable to load ratings and compliance records.');
+          setIsLoading(false);
+        }
       });
 
     return () => {
@@ -69,6 +79,13 @@ export function DealerRatingsReportsPage() {
             Read-only feedback from verified customers who completed vehicle deliveries at your dealership.
           </p>
         </div>
+
+        {loadError && (
+          <div className="p-4 rounded-xl bg-red-50 border border-red-200 flex items-center gap-2.5 text-xs text-red-800">
+            <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+            <span>{loadError}</span>
+          </div>
+        )}
 
         {/* Rating summary banner */}
         <div className="p-6 rounded-2xl bg-white border border-slate-200/80 shadow-card flex flex-col sm:flex-row items-center justify-between gap-4">

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -15,8 +15,11 @@ export function PendingApprovalPage() {
   const navigate = useNavigate();
 
   // Load real dealership data directly from Supabase
-  const loadDealershipData = async () => {
-    if (!user) return;
+  const loadDealershipData = useCallback(async () => {
+    if (!user) {
+      setIsLoading(false);
+      return;
+    }
     try {
       // 1. Check dealer_users
       const { data: du } = await supabase
@@ -80,11 +83,11 @@ export function PendingApprovalPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [user, navigate]);
 
   useEffect(() => {
     loadDealershipData();
-  }, [user]);
+  }, [loadDealershipData]);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);

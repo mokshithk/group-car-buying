@@ -54,9 +54,10 @@ export function AdminAdminsPage() {
     emailedAutomatically: boolean;
   } | null>(null);
 
-  // Action ReAuth state for revoke / admin status change
+  // Action ReAuth state for revoke / resend / admin status change
   const [pendingAction, setPendingAction] = useState<
     | { type: 'REVOKE_INVITE'; invite: AdminInviteRow }
+    | { type: 'RESEND_INVITE'; invite: AdminInviteRow }
     | {
         type: 'ADMIN_STATUS';
         target: AdminUserRow;
@@ -204,6 +205,11 @@ export function AdminAdminsPage() {
       });
       if (rpcErr) throw new Error(rpcErr.message);
       toast({ type: 'success', title: 'Invite Revoked', message: `Revoked invite for ${pendingAction.invite.email}.` });
+      setPendingAction(null);
+      await loadData();
+    } else if (pendingAction.type === 'RESEND_INVITE') {
+      await handleResendInvite(pendingAction.invite);
+      setPendingAction(null);
     } else {
       const { error: rpcErr } = await supabase.rpc('admin_set_admin_status', {
         p_target_user_id: pendingAction.target.id,
@@ -212,9 +218,9 @@ export function AdminAdminsPage() {
       });
       if (rpcErr) throw new Error(rpcErr.message);
       toast({ type: 'success', title: 'Admin Updated', message: 'Administrator permissions updated.' });
+      setPendingAction(null);
+      await loadData();
     }
-    setPendingAction(null);
-    await loadData();
   };
 
   const adminColumns: ColumnDef<AdminUserRow>[] = [
@@ -368,7 +374,11 @@ export function AdminAdminsPage() {
       render: (row) => (
         <div className="flex items-center justify-end gap-1.5">
           {(row.status === 'PENDING' || row.status === 'EXPIRED') && (
-            <Button size="sm" variant="outline" onClick={() => handleResendInvite(row)}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setPendingAction({ type: 'RESEND_INVITE', invite: row })}
+            >
               <RefreshCw className="w-3.5 h-3.5 mr-1" /> Resend
             </Button>
           )}
@@ -448,10 +458,11 @@ export function AdminAdminsPage() {
                 >
                   <Copy className="w-3.5 h-3.5 mr-1" /> Copy Link
                 </Button>
-                <a href={mailtoHref}>
-                  <Button size="sm" variant="primary" type="button">
-                    <Mail className="w-3.5 h-3.5 mr-1" /> Open in email app
-                  </Button>
+                <a
+                  href={mailtoHref}
+                  className="inline-flex items-center justify-center rounded-lg px-3 py-1.5 text-xs font-semibold bg-brand-600 text-white hover:bg-brand-700 transition-colors"
+                >
+                  <Mail className="w-3.5 h-3.5 mr-1" /> Open in email app
                 </a>
               </div>
             </div>
@@ -562,13 +573,15 @@ export function AdminAdminsPage() {
         onConfirm={confirmCreateInvite}
       />
 
-      {/* Re-auth for Revoke / Status Changes */}
+      {/* Re-auth for Revoke / Resend / Status Changes */}
       <ReAuthModal
         isOpen={Boolean(pendingAction)}
         onClose={() => setPendingAction(null)}
         title={
           pendingAction?.type === 'REVOKE_INVITE'
             ? `Revoke Invite for ${pendingAction.invite.email}`
+            : pendingAction?.type === 'RESEND_INVITE'
+            ? `Rotate & Resend Invite for ${pendingAction.invite.email}`
             : pendingAction
             ? `Update Administrator (${pendingAction.target.full_name})`
             : 'Confirm Action'
@@ -579,13 +592,16 @@ export function AdminAdminsPage() {
             <span>
               {pendingAction?.type === 'REVOKE_INVITE'
                 ? 'This will immediately invalidate the invitation link.'
+                : pendingAction?.type === 'RESEND_INVITE'
+                ? 'This rotates the SHA-256 invite token, invalidates any prior token, and issues a fresh 7-day link.'
                 : `Confirm action "${pendingAction?.action}" on ${pendingAction?.target.email || pendingAction?.target.full_name}.`}
             </span>
           </div>
         }
         confirmLabel="Confirm & Apply"
         confirmVariant={
-          pendingAction?.type === 'REVOKE_INVITE' || pendingAction?.action === 'DEACTIVATE'
+          pendingAction?.type === 'REVOKE_INVITE' ||
+          (pendingAction?.type === 'ADMIN_STATUS' && pendingAction.action === 'DEACTIVATE')
             ? 'danger'
             : 'primary'
         }

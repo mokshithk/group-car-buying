@@ -75,15 +75,42 @@ export function AdminReportDetailPage() {
     loadReport();
   }, [loadReport]);
 
-  const executeUpdate = async (finalStatus: string, notesText: string, finalAction: string | null) => {
+  const executeUpdate = async (
+    finalStatus: string,
+    notesText: string,
+    finalAction: string | null,
+    suspensionReason?: string
+  ) => {
     if (!report) return;
-    const { error: rpcErr } = await supabase.rpc('admin_manage_report', {
-      p_report_id: report.id,
-      p_status: finalStatus,
-      p_admin_notes: notesText.trim() || null,
-      p_action: finalAction || null,
-    });
-    if (rpcErr) throw new Error(rpcErr.message);
+    if (suspensionReason) {
+      const { error: rpcErr5 } = await supabase.rpc('admin_manage_report', {
+        p_report_id: report.id,
+        p_status: finalStatus,
+        p_admin_notes: notesText.trim() || null,
+        p_action: finalAction || null,
+        p_suspension_reason: suspensionReason.trim(),
+      });
+      if (rpcErr5) {
+        if (!rpcErr5.message.includes('admin_manage_report')) {
+          throw new Error(rpcErr5.message);
+        }
+        const { error: fallbackErr } = await supabase.rpc('admin_manage_report', {
+          p_report_id: report.id,
+          p_status: finalStatus,
+          p_admin_notes: [notesText.trim(), suspensionReason.trim()].filter(Boolean).join(' — ') || null,
+          p_action: finalAction || null,
+        });
+        if (fallbackErr) throw new Error(fallbackErr.message);
+      }
+    } else {
+      const { error: rpcErr } = await supabase.rpc('admin_manage_report', {
+        p_report_id: report.id,
+        p_status: finalStatus,
+        p_admin_notes: notesText.trim() || null,
+        p_action: finalAction || null,
+      });
+      if (rpcErr) throw new Error(rpcErr.message);
+    }
 
     toast({
       type: 'success',
@@ -262,9 +289,13 @@ export function AdminReportDetailPage() {
             <Select
               label="Enforcement Action"
               value={action}
-              onChange={(e) =>
-                setAction(e.target.value as '' | 'WARN_DEALER' | 'SUSPEND_DEALER' | 'DISMISS')
-              }
+              onChange={(e) => {
+                const next = e.target.value as '' | 'WARN_DEALER' | 'SUSPEND_DEALER' | 'DISMISS';
+                setAction(next);
+                if (next === 'DISMISS') {
+                  setStatus('REJECTED');
+                }
+              }}
               options={[
                 { value: '', label: 'Status / Note Update Only' },
                 { value: 'WARN_DEALER', label: 'Send Formal Warning Notification to Dealer' },
@@ -276,7 +307,7 @@ export function AdminReportDetailPage() {
 
           <div className="space-y-1.5">
             <label className="block text-xs font-semibold uppercase tracking-wide text-slate-700">
-              Investigation Notes (Shared with Buyer on Update)
+              Internal Admin Investigation Notes (Not Sent to Buyer)
             </label>
             <textarea
               rows={3}
@@ -321,8 +352,7 @@ export function AdminReportDetailPage() {
         requireReason={true}
         reasonLabel="Suspension Reason (Required)"
         onConfirm={async (reason) => {
-          const combinedNotes = [adminNotes.trim(), reason.trim()].filter(Boolean).join(' — ');
-          await executeUpdate('RESOLVED', combinedNotes, 'SUSPEND_DEALER');
+          await executeUpdate('RESOLVED', adminNotes, 'SUSPEND_DEALER', reason.trim());
           setSuspendModalOpen(false);
         }}
       />

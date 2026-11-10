@@ -190,10 +190,18 @@ export function AdminQuotationsPage() {
     },
     {
       key: 'vehicle',
-      header: 'Vehicle',
+      header: 'Vehicle & Breakdown',
       render: (row) => (
-        <div className="text-xs text-slate-700">
-          {row.group?.variant?.model?.name} {row.group?.variant?.name}
+        <div className="text-xs text-slate-700 space-y-0.5 min-w-[180px]">
+          <div className="font-medium text-slate-900">
+            {row.group?.variant?.model?.name} {row.group?.variant?.name}
+          </div>
+          <div className="text-[11px] text-slate-500 tabular-nums">
+            Ex: {formatINR(Number(row.ex_showroom_price))} · Ins: {formatINR(Number(row.insurance))} · RTO: {formatINR(Number(row.registration_charges))}
+          </div>
+          <div className="text-[11px] text-slate-500 tabular-nums">
+            Acc: {formatINR(Number(row.accessories_extras))} · Disc: <span className="text-emerald-700 font-semibold">-{formatINR(Number(row.discounts))}</span>
+          </div>
         </div>
       ),
     },

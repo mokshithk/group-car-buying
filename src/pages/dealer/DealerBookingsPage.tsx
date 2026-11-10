@@ -1,13 +1,15 @@
 import { useState, useEffect, useCallback } from 'react';
 import { DealerLayout } from '@/components/layout/DealerLayout';
-import { Button, Badge, Card, Modal } from '@/components/ui';
+import { Button, Badge, Card, Modal, Input } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/Toast';
 import {
   fetchDealerBookings,
   cancelBookingByDealerFault,
   confirmDelivery,
+  calculateDealerFaultRefund,
 } from '@/lib/bookingService';
+import { fetchPlatformSettings, DEFAULT_PLATFORM_SETTINGS } from '@/lib/catalogService';
 import { formatINR, formatDateTime } from '@/lib/formatters';
 import { Booking } from '@/types';
 import {
@@ -18,6 +20,7 @@ import {
   CheckCircle2,
   RotateCcw,
   AlertTriangle,
+  AlertCircle,
 } from 'lucide-react';
 
 export function DealerBookingsPage() {
@@ -25,10 +28,18 @@ export function DealerBookingsPage() {
   const { toast } = useToast();
 
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [deliveryFallbackDays, setDeliveryFallbackDays] = useState<number>(
+    DEFAULT_PLATFORM_SETTINGS.dealerDeliveryFallbackDays
+  );
+  const [feeRefundOnFault, setFeeRefundOnFault] = useState<boolean>(
+    DEFAULT_PLATFORM_SETTINGS.feeRefundOnDealerFault
+  );
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   // Dealer-fault cancel modal state
   const [cancelTarget, setCancelTarget] = useState<Booking | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
   const [isCancelling, setIsCancelling] = useState(false);
 
   const loadBookings = useCallback(async () => {
@@ -37,9 +48,20 @@ export function DealerBookingsPage() {
       return;
     }
     setIsLoading(true);
-    const myBookings = await fetchDealerBookings(dealership.id);
-    setBookings(myBookings);
-    setIsLoading(false);
+    setLoadError(null);
+    try {
+      const [myBookings, settings] = await Promise.all([
+        fetchDealerBookings(dealership.id),
+        fetchPlatformSettings(),
+      ]);
+      setBookings(myBookings);
+      setDeliveryFallbackDays(settings.dealerDeliveryFallbackDays);
+      setFeeRefundOnFault(settings.feeRefundOnDealerFault);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Unable to load customer bookings.');
+    } finally {
+      setIsLoading(false);
+    }
   }, [dealership]);
 
   useEffect(() => {
@@ -47,35 +69,63 @@ export function DealerBookingsPage() {
   }, [loadBookings]);
 
   const handleCancelDealerFault = async () => {
-    if (!cancelTarget) return;
-    setIsCancelling(true);
+    if (!cancelTarget || isCancelling) return;
+    if (!cancelReason.trim()) {
+      toast({
+        type: 'error',
+        title: 'Reason Required',
+        message: 'Provide a reason for the dealer-fault cancellation.',
+      });
+      return;
+    }
 
+    setIsCancelling(true);
     try {
-      const res = await cancelBookingByDealerFault(cancelTarget.id);
+      const res = await cancelBookingByDealerFault(cancelTarget.id, cancelReason.trim());
+      if (!res.success) {
+        toast({
+          type: 'error',
+          title: 'Cancellation Failed',
+          message: res.error || 'Could not cancel booking.',
+        });
+        return;
+      }
+
       toast({
         type: 'warning',
         title: 'Booking Cancelled (Dealer Fault)',
-        message: `Customer issued 100% refund of ${formatINR(res.totalRefunded)} (Deposit + Platform Fee).`,
+        message: `Customer issued refund of ${formatINR(res.totalRefunded)}.`,
       });
       setCancelTarget(null);
-      loadBookings();
-    } catch {
-      toast({ type: 'error', title: 'Cancellation failed' });
+      setCancelReason('');
+      await loadBookings();
+    } catch (err) {
+      toast({
+        type: 'error',
+        title: 'Cancellation failed',
+        message: err instanceof Error ? err.message : 'Unable to process cancellation.',
+      });
     } finally {
       setIsCancelling(false);
     }
   };
 
-  // Dealer delivery fallback trigger after 14 days (Section 2)
+  // Dealer delivery fallback trigger after configured fallback days
   const handleDealerDeliveryFallback = async (bookingId: string) => {
-    const success = await confirmDelivery(bookingId);
-    if (success) {
+    const res = await confirmDelivery(bookingId);
+    if (res.success) {
       toast({
         type: 'success',
         title: 'Delivery Marked by Showroom',
-        message: 'Order closed as Delivered under showroom fallback rule.',
+        message: `Order closed as Delivered under the ${deliveryFallbackDays}-day showroom fallback policy.`,
       });
-      loadBookings();
+      await loadBookings();
+    } else {
+      toast({
+        type: 'error',
+        title: 'Delivery Confirmation Blocked',
+        message: res.error || 'Unable to confirm delivery.',
+      });
     }
   };
 
@@ -102,6 +152,13 @@ export function DealerBookingsPage() {
           </span>
         </div>
 
+        {loadError && (
+          <div className="p-4 rounded-xl bg-red-50 border border-red-200 flex items-center gap-2.5 text-xs text-red-800">
+            <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+            <span>{loadError}</span>
+          </div>
+        )}
+
         {isLoading ? (
           <div className="py-16 text-center text-slate-400">Loading bookings...</div>
         ) : bookings.length === 0 ? (
@@ -119,11 +176,11 @@ export function DealerBookingsPage() {
               const isPaid = b.status === 'PAID';
               const isDelivered = b.status === 'DELIVERED';
 
-              // Fallback days check: 14 days setting
               const daysSinceBooking = Math.floor(
                 (Date.now() - new Date(b.created_at).getTime()) / (1000 * 60 * 60 * 24)
               );
-              const canDealerConfirmDelivery = daysSinceBooking >= 14 || true; // enabled in test mode
+              const canDealerConfirmDelivery = daysSinceBooking >= deliveryFallbackDays;
+              const daysRemaining = Math.max(0, deliveryFallbackDays - daysSinceBooking);
 
               return (
                 <Card key={b.id} className="p-6">
@@ -138,14 +195,16 @@ export function DealerBookingsPage() {
                           <span className="font-mono text-sm font-black text-brand-700 bg-brand-50 px-2.5 py-0.5 rounded border border-brand-200">
                             {b.booking_code}
                           </span>
+                          {b.status === 'PENDING' && <Badge variant="warning" size="sm">PENDING</Badge>}
                           {isPaid && <Badge variant="success" size="sm">Price Locked (PAID)</Badge>}
                           {isDelivered && <Badge variant="milestone" size="sm">DELIVERED</Badge>}
                           {b.status === 'CANCELLED_BY_DEALER' && (
-                            <Badge variant="danger" size="sm">Cancelled by Showroom (100% Refunded)</Badge>
+                            <Badge variant="danger" size="sm">Cancelled by Showroom</Badge>
                           )}
                           {b.status === 'CANCELLED_BY_BUYER' && (
                             <Badge variant="danger" size="sm">Cancelled by Customer</Badge>
                           )}
+                          {b.status === 'REFUNDED' && <Badge variant="default" size="sm">REFUNDED</Badge>}
                         </div>
                         <div className="text-[11px] text-slate-400 mt-1">
                           Booked on {formatDateTime(b.created_at)}
@@ -189,7 +248,9 @@ export function DealerBookingsPage() {
                         </div>
                         <div className="flex justify-between pt-1 border-t border-slate-200 font-bold">
                           <span>Balance to Collect at Delivery:</span>
-                          <span className="text-slate-900">{formatINR(snap.on_road_price - b.booking_amount)}</span>
+                          <span className="text-slate-900">
+                            {formatINR(Math.max(0, snap.on_road_price - b.booking_amount))}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -198,24 +259,32 @@ export function DealerBookingsPage() {
                     {isPaid && (
                       <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-3">
                         <div className="flex items-center gap-2">
-                          {canDealerConfirmDelivery && (
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => handleDealerDeliveryFallback(b.id)}
-                              leftIcon={<CheckCircle2 className="w-4 h-4 text-emerald-600" />}
-                              title="Fallback: Dealer can confirm delivery if customer has not after 14 days"
-                            >
-                              Showroom Delivery Fallback (14 Days)
-                            </Button>
-                          )}
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={!canDealerConfirmDelivery}
+                            onClick={() => handleDealerDeliveryFallback(b.id)}
+                            leftIcon={<CheckCircle2 className="w-4 h-4 text-emerald-600" />}
+                            title={
+                              canDealerConfirmDelivery
+                                ? `Showroom fallback available after ${deliveryFallbackDays} days`
+                                : `Available in ${daysRemaining} day(s) under the ${deliveryFallbackDays}-day policy`
+                            }
+                          >
+                            {canDealerConfirmDelivery
+                              ? `Showroom Delivery Fallback (${deliveryFallbackDays} Days)`
+                              : `Delivery Fallback (${daysRemaining}d left)`}
+                          </Button>
                         </div>
 
-                        {/* Dealer fault cancellation trigger (Section 2 & 3) */}
+                        {/* Dealer fault cancellation trigger */}
                         <Button
                           variant="danger"
                           size="sm"
-                          onClick={() => setCancelTarget(b)}
+                          onClick={() => {
+                            setCancelReason('');
+                            setCancelTarget(b);
+                          }}
                           leftIcon={<RotateCcw className="w-4 h-4" />}
                         >
                           Cancel Booking (Dealer Fault)
@@ -256,33 +325,48 @@ export function DealerBookingsPage() {
             </div>
           }
         >
-          {cancelTarget && (
-            <div className="space-y-4 pt-2 text-xs">
-              <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 space-y-2 text-rose-950">
-                <div className="font-bold text-sm text-rose-900 flex items-center gap-1.5">
-                  <AlertTriangle className="w-4 h-4 text-rose-600" />
-                  <span>Mandatory Dealer-Fault Refund Terms</span>
+          {cancelTarget && (() => {
+            const refundCalc = calculateDealerFaultRefund(
+              cancelTarget.booking_amount,
+              cancelTarget.platform_fee,
+              feeRefundOnFault
+            );
+            return (
+              <div className="space-y-4 pt-2 text-xs">
+                <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 space-y-2 text-rose-950">
+                  <div className="font-bold text-sm text-rose-900 flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 text-rose-600" />
+                    <span>Mandatory Dealer-Fault Refund Terms</span>
+                  </div>
+                  <p className="leading-relaxed">
+                    If the dealership cannot supply the vehicle or cannot honor the locked price snapshot, platform policy enforces a 100% booking deposit refund{feeRefundOnFault ? ' plus platform fee refund' : ''}.
+                  </p>
+                  <div className="p-3 bg-white rounded-lg border border-rose-200 space-y-1">
+                    <div className="flex justify-between">
+                      <span>Booking Amount Refunded:</span>
+                      <strong>{formatINR(refundCalc.bookingAmountRefunded)}</strong>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Platform Fee Refunded:</span>
+                      <strong>{formatINR(refundCalc.platformFeeRefunded)}</strong>
+                    </div>
+                    <div className="flex justify-between pt-1 border-t border-rose-200 font-bold text-rose-900">
+                      <span>Total Refunded to Customer:</span>
+                      <span>{formatINR(refundCalc.totalRefunded)}</span>
+                    </div>
+                  </div>
                 </div>
-                <p className="leading-relaxed">
-                  If the dealership cannot supply the vehicle or cannot honor the locked price snapshot, platform rules require a full 100% refund of the customer's deposit plus platform fee.
-                </p>
-                <div className="p-3 bg-white rounded-lg border border-rose-200 space-y-1">
-                  <div className="flex justify-between">
-                    <span>Booking Amount Refunded:</span>
-                    <strong>{formatINR(cancelTarget.booking_amount)}</strong>
-                  </div>
-                  <div className="flex justify-between">
-                    <span>Platform Fee Refunded:</span>
-                    <strong>{formatINR(cancelTarget.platform_fee)}</strong>
-                  </div>
-                  <div className="flex justify-between pt-1 border-t border-rose-200 font-bold text-rose-900">
-                    <span>Total Refunded to Customer:</span>
-                    <span>{formatINR(cancelTarget.booking_amount + cancelTarget.platform_fee)} (100%)</span>
-                  </div>
-                </div>
+
+                <Input
+                  label="Cancellation Reason (Required)"
+                  placeholder="e.g. Allocation unavailable for this color/variant within delivery window"
+                  required
+                  value={cancelReason}
+                  onChange={(e) => setCancelReason(e.target.value)}
+                />
               </div>
-            </div>
-          )}
+            );
+          })()}
         </Modal>
       </div>
     </DealerLayout>
