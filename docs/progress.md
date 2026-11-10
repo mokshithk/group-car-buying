@@ -201,6 +201,6 @@
   - Built `AdminBuyersPage` (`/admin/buyers`) and `AdminBuyerDetailPage` (`/admin/buyers/:id`) with search/filters, suspend/reactivate/deactivate (`ReAuthModal`), and real deletion request processing synced with `ProfilePrivacyPage`
 - [x] **Admin Task 4**: Catalogue, Districts & Groups Pages (`add catalogue, districts and groups pages`)
 - [x] **Admin Task 5**: Quotations, Bookings/Refunds, Reports & Ratings (`add bookings, reports and ratings pages`)
-- [ ] **Admin Task 6**: Admin Invites, Accept Invite & Admin Account Pages (`add admin invites and account page`)
+- [x] **Admin Task 6**: Admin Invites, Accept Invite & Admin Account Pages (`add admin invites and account page`)
 - [ ] **Admin Task 7**: Settings, Notifications, Audit Log, Exports & Group Expiry (`settings, notifications, audit log, exports and group expiry`)
 - [ ] **Admin Task 8**: Remote Migrations, First Admin & Test Setup, Full Test Suite & Docs (`tests, test report and documentation`)

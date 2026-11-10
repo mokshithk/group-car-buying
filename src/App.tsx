@@ -51,6 +51,9 @@ import { AdminBookingDetailPage } from '@/pages/admin/AdminBookingDetailPage';
 import { AdminReportsPage } from '@/pages/admin/AdminReportsPage';
 import { AdminReportDetailPage } from '@/pages/admin/AdminReportDetailPage';
 import { AdminRatingsPage } from '@/pages/admin/AdminRatingsPage';
+import { AdminAdminsPage } from '@/pages/admin/AdminAdminsPage';
+import { AcceptAdminInvitePage } from '@/pages/admin/AcceptAdminInvitePage';
+import { AdminAccountPage } from '@/pages/admin/AdminAccountPage';
 import { ForcePasswordChangePage } from '@/pages/admin/ForcePasswordChangePage';
 
 import { isSupabaseConfigured } from '@/lib/supabase';
@@ -407,6 +410,23 @@ export default function App() {
                   element={
                     <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
                       <AdminRatingsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route path="/admin/accept-invite" element={<AcceptAdminInvitePage />} />
+                <Route
+                  path="/admin/admins"
+                  element={
+                    <ProtectedRoute allowedRoles={['super_admin']}>
+                      <AdminAdminsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/account"
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <AdminAccountPage />
                     </ProtectedRoute>
                   }
                 />

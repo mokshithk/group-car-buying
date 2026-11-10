@@ -5,7 +5,9 @@ import { Mail, ArrowRight, RefreshCw, ArrowLeft, ShieldCheck, AlertCircle, KeyRo
 
 interface OtpVerificationProps {
   email: string;
-  type: 'signup' | 'recovery';
+  type: 'signup' | 'recovery' | 'email';
+  provider?: 'portal_fallback' | 'supabase_otp';
+  allowCreateUser?: boolean;
   title?: string;
   description?: string;
   initialDevOtp?: string;
@@ -19,6 +21,8 @@ interface OtpVerificationProps {
 export function OtpVerification({
   email,
   type,
+  provider = 'portal_fallback',
+  allowCreateUser = true,
   title,
   description,
   initialDevOtp,
@@ -56,6 +60,25 @@ export function OtpVerification({
 
   // 3. Query SMTP status and dispatch initial OTP ONLY if parent didn't already dispatch it
   useEffect(() => {
+    if (provider === 'supabase_otp') {
+      if (!hasDispatchedRef.current && email) {
+        hasDispatchedRef.current = true;
+        supabase.auth
+          .signInWithOtp({
+            email,
+            options: { shouldCreateUser: allowCreateUser },
+          })
+          .then(({ error: otpErr }) => {
+            if (otpErr) {
+              setError(otpErr.message);
+            } else {
+              setResendNotice(`A 6-digit verification code has been sent to ${email}.`);
+            }
+          });
+      }
+      return;
+    }
+
     fetch('/api/auth/smtp-status')
       .then((r) => r.json())
       .then((data) => {
@@ -81,7 +104,7 @@ export function OtpVerification({
         })
         .catch(() => {});
     }
-  }, [email, type]);
+  }, [email, type, provider, allowCreateUser]);
 
   // 4. 60-second cooldown countdown timer
   useEffect(() => {
@@ -170,35 +193,37 @@ export function OtpVerification({
     setIsVerifying(true);
 
     try {
-      // 1. Verify against local SMTP OTP server
       let handledByPortal = false;
-      try {
-        const portalRes = await fetch('/api/auth/verify-otp', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, code: token, type }),
-        });
+      if (provider !== 'supabase_otp') {
+        // 1. Verify against local SMTP OTP server
+        try {
+          const portalRes = await fetch('/api/auth/verify-otp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, code: token, type }),
+          });
 
-        if (portalRes.status !== 404) {
-          handledByPortal = true;
-          const portalData = await portalRes.json();
-          if (portalData.success) {
-            await onSuccess();
+          if (portalRes.status !== 404) {
+            handledByPortal = true;
+            const portalData = await portalRes.json();
+            if (portalData.success) {
+              await onSuccess();
+              return;
+            }
+            setError(portalData.error || 'Incorrect verification code. Please try again.');
             return;
           }
-          setError(portalData.error || 'Incorrect verification code. Please try again.');
-          return;
+        } catch {
+          // Local endpoint unreachable (e.g. static hosting) -> fall through to Supabase
         }
-      } catch {
-        // Local endpoint unreachable (e.g. static hosting) -> fall through to Supabase
       }
 
       if (!handledByPortal) {
-        // 2. Fallback to Supabase verifyOtp
+        // 2. Supabase Auth verifyOtp
         const { error: verifyErr } = await supabase.auth.verifyOtp({
           email,
           token,
-          type,
+          type: provider === 'supabase_otp' ? 'email' : type,
         });
 
         if (verifyErr) {
@@ -233,22 +258,31 @@ export function OtpVerification({
     setResendNotice('');
 
     try {
-      const res = await fetch('/api/auth/send-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, type }),
-      });
-      const data = await res.json();
-
-      if (data.channel === 'smtp') {
-        setDevCode(null);
-        setSmtpErr(null);
-        setIsSmtpConfigured(true);
+      if (provider === 'supabase_otp') {
+        const { error: otpErr } = await supabase.auth.signInWithOtp({
+          email,
+          options: { shouldCreateUser: allowCreateUser },
+        });
+        if (otpErr) throw otpErr;
         setResendNotice('A fresh 6-digit verification code has been sent to your email.');
-      } else if (data.devOtp) {
-        setDevCode(data.devOtp);
-        setSmtpErr(data.smtpError || null);
-        setResendNotice('Fresh verification code generated.');
+      } else {
+        const res = await fetch('/api/auth/send-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, type }),
+        });
+        const data = await res.json();
+
+        if (data.channel === 'smtp') {
+          setDevCode(null);
+          setSmtpErr(null);
+          setIsSmtpConfigured(true);
+          setResendNotice('A fresh 6-digit verification code has been sent to your email.');
+        } else if (data.devOtp) {
+          setDevCode(data.devOtp);
+          setSmtpErr(data.smtpError || null);
+          setResendNotice('Fresh verification code generated.');
+        }
       }
 
       setResendCooldown(60);

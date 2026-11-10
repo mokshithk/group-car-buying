@@ -71,7 +71,7 @@ export function ProtectedRoute({
     (allowedRoles && allowedRoles.every((r) => isAdminRole(r)));
 
   if (allowedRoles && !allowedRoles.includes(profile.role)) {
-    if (isTargetingAdminRoute && !isAdminRole(profile.role)) {
+    if (isTargetingAdminRoute) {
       return <ForbiddenPage />;
     }
     if (isAdminRole(profile.role)) {
