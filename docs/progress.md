@@ -192,7 +192,9 @@
 - [x] **Admin Task 1**: Admin Roles, Security Model & Audit Helpers (`add admin roles and audit helpers`)
   - Extended `profiles.role` to support `super_admin` & `admin` with signup trigger lockdown, `is_admin()`, `is_super_admin()`, last `super_admin` guard, append-only `audit_log`, `admin_invites`, and transactional `SECURITY DEFINER` RPCs in `006_admin_module.sql`
   - Created `supabase/make_first_admin.sql`, `adminHelpers.ts` (validators, outlier detector, CSV builder, SHA-256 token hashing), `ForbiddenPage` (403), `ForcePasswordChangePage` (first-login 12+ char reset), and ESLint/Supabase CLI local tooling
-- [ ] **Admin Task 2**: Admin Layout Shell, Idle Timeout, Re-auth Modal & Dashboard (`add admin layout and dashboard`)
+- [x] **Admin Task 2**: Admin Layout Shell, Idle Timeout, Re-auth Modal & Dashboard (`add admin layout and dashboard`)
+  - Built `AdminLayout` (grouped sidebar, breadcrumbs, persistent `"Signed in as <email> (Admin)"` label, 30-min idle timeout with 1-min warning modal, mobile slide-over drawer)
+  - Built shared `DataTable` (sticky headers, tabular numbers, sorting, pagination, skeleton/empty/error states), `ReAuthModal` (password verification + mandatory reason), `AdminCharts` (30-day SVG trend chart), and `AdminDashboardPage` (`/admin/dashboard`)
 - [ ] **Admin Task 3**: Dealer & Buyer Management (`add dealer and buyer management`)
 - [ ] **Admin Task 4**: Catalogue, Districts & Groups Pages (`add catalogue, districts and groups pages`)
 - [ ] **Admin Task 5**: Quotations, Bookings/Refunds, Reports & Ratings (`add bookings, reports and ratings pages`)

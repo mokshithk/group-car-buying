@@ -29,6 +29,7 @@ test-results/
 playwright-report/
 blob-report/
 playwright/.cache/
+supabase/.temp/
 
 # Editor / OS
 .vscode/*

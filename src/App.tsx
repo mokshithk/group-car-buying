@@ -37,6 +37,7 @@ import { DealerNotificationsPage } from '@/pages/dealer/DealerNotificationsPage'
 import { ShowroomProfilePage } from '@/pages/dealer/ShowroomProfilePage';
 import { StaffManagementPage } from '@/pages/dealer/StaffManagementPage';
 import { AdminDealersPage } from '@/pages/admin/AdminDealersPage';
+import { AdminDashboardPage } from '@/pages/admin/AdminDashboardPage';
 import { ForcePasswordChangePage } from '@/pages/admin/ForcePasswordChangePage';
 
 import { isSupabaseConfigured } from '@/lib/supabase';
@@ -280,7 +281,7 @@ export default function App() {
                   path="/admin/dashboard"
                   element={
                     <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
-                      <AdminDealersPage />
+                      <AdminDashboardPage />
                     </ProtectedRoute>
                   }
                 />
@@ -296,7 +297,7 @@ export default function App() {
                   path="/admin/*"
                   element={
                     <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
-                      <AdminDealersPage />
+                      <AdminDashboardPage />
                     </ProtectedRoute>
                   }
                 />
