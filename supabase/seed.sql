@@ -69,5 +69,37 @@ INSERT INTO public.variants (id, model_id, name, transmission, fuel_type, engine
 
     -- Volkswagen Virtus Variants (Model: b1111111-...11)
     ('c1111111-1111-1111-1111-111111111109', 'b1111111-1111-1111-1111-111111111111', 'Highline 1.0 TSI MT', 'Manual', 'Petrol', 999, 1338000, ARRAY['Wireless App Connect', 'Rear Camera', 'Cruise Control']),
-    ('c1111111-1111-1111-1111-111111111110', 'b1111111-1111-1111-1111-111111111111', 'GT Plus 1.5 TSI DSG', 'DCT', 'Petrol', 1498, 1940000, ARRAY['1.5 EVO Engine with ACT', 'Digital Cockpit', 'Red Ambient Lighting', 'Sunroof'])
+    ('c1111111-1111-1111-1111-111111111110', 'b1111111-1111-1111-1111-111111111111', 'GT Plus 1.5 TSI DSG', 'DCT', 'Petrol', 1498, 1940000, ARRAY['1.5 EVO Engine with ACT', 'Digital Cockpit', 'Red Ambient Lighting', 'Sunroof']),
+
+    -- Tata Harrier Variants (Model: b1111111-...02)
+    ('c1111111-1111-1111-1111-111111111111', 'b1111111-1111-1111-1111-111111111102', 'Pure Plus 2.0 Diesel MT', 'Manual', 'Diesel', 1956, 1699000, ARRAY['10.25-inch Touchscreen', 'Rear View Camera', '6 Airbags']),
+    ('c1111111-1111-1111-1111-111111111112', 'b1111111-1111-1111-1111-111111111102', 'Fearless Plus 2.0 Diesel AT', 'Automatic', 'Diesel', 1956, 2449000, ARRAY['ADAS L2', 'JBL 10-Speaker Audio', 'Panoramic Sunroof']),
+
+    -- Hyundai Verna Variants (Model: b1111111-...04)
+    ('c1111111-1111-1111-1111-111111111113', 'b1111111-1111-1111-1111-111111111104', 'SX 1.5 Petrol MT', 'Manual', 'Petrol', 1497, 1300000, ARRAY['Sunroof', 'Wireless Charger', 'Ambient Lighting']),
+    ('c1111111-1111-1111-1111-111111111114', 'b1111111-1111-1111-1111-111111111104', 'SX (O) 1.5 Turbo Petrol DCT', 'DCT', 'Petrol', 1482, 1742000, ARRAY['ADAS L2', 'Heated & Ventilated Seats', 'Bose Audio']),
+
+    -- Mahindra Scorpio-N Variants (Model: b1111111-...06)
+    ('c1111111-1111-1111-1111-111111111115', 'b1111111-1111-1111-1111-111111111106', 'Z4 2.0 Petrol MT 7-Str', 'Manual', 'Petrol', 1997, 1525000, ARRAY['8-inch Touchscreen', 'Cruise Control', 'Rear AC']),
+    ('c1111111-1111-1111-1111-111111111116', 'b1111111-1111-1111-1111-111111111106', 'Z8 L 2.2 Diesel AT 4WD', 'Automatic', 'Diesel', 2184, 2454000, ARRAY['4XPLOR Terrain Modes', 'Sony 12-Speaker Audio', 'Sunroof']),
+
+    -- Maruti Grand Vitara Variants (Model: b1111111-...07)
+    ('c1111111-1111-1111-1111-111111111117', 'b1111111-1111-1111-1111-111111111107', 'Delta 1.5 Smart Hybrid MT', 'Manual', 'Petrol', 1462, 1210000, ARRAY['Cruise Control', 'Auto Climate', 'Rear Camera']),
+    ('c1111111-1111-1111-1111-111111111118', 'b1111111-1111-1111-1111-111111111107', 'Alpha Plus 1.5 Intelligent Electric Hybrid', 'CVT', 'Hybrid', 1490, 1993000, ARRAY['Strong Hybrid EV Mode', '360 Camera', 'HUD']),
+
+    -- Maruti Baleno Variants (Model: b1111111-...08)
+    ('c1111111-1111-1111-1111-111111111119', 'b1111111-1111-1111-1111-111111111108', 'Delta 1.2 Petrol MT', 'Manual', 'Petrol', 1197, 750000, ARRAY['7-inch SmartPlay Studio', 'Auto Climate', 'ESP']),
+    ('c1111111-1111-1111-1111-111111111120', 'b1111111-1111-1111-1111-111111111108', 'Alpha 1.2 Petrol AMT', 'Automatic', 'Petrol', 1197, 988000, ARRAY['HUD Display', '360 Camera', '6 Airbags']),
+
+    -- Kia Seltos Variants (Model: b1111111-...09)
+    ('c1111111-1111-1111-1111-111111111121', 'b1111111-1111-1111-1111-111111111109', 'HTK Plus 1.5 Petrol iMT', 'iMT', 'Petrol', 1497, 1399000, ARRAY['Sunroof', 'Cruise Control', 'Keyless Entry']),
+    ('c1111111-1111-1111-1111-111111111122', 'b1111111-1111-1111-1111-111111111109', 'GTX Plus 1.5 Diesel AT', 'Automatic', 'Diesel', 1493, 1999000, ARRAY['ADAS L2', 'Dual 10.25 Screens', 'Bose Audio']),
+
+    -- Toyota Hyryder Variants (Model: b1111111-...10)
+    ('c1111111-1111-1111-1111-111111111123', 'b1111111-1111-1111-1111-111111111110', 'S 1.5 NeoDrive AT', 'Automatic', 'Petrol', 1462, 1396000, ARRAY['Paddle Shifters', 'Cruise Control', 'Rear Camera']),
+    ('c1111111-1111-1111-1111-111111111124', 'b1111111-1111-1111-1111-111111111110', 'V 1.5 Strong Hybrid e-Drive', 'CVT', 'Hybrid', 1490, 2019000, ARRAY['Panoramic Sunroof', '360 Camera', 'Ventilated Seats']),
+
+    -- Skoda Slavia Variants (Model: b1111111-...12)
+    ('c1111111-1111-1111-1111-111111111125', 'b1111111-1111-1111-1111-111111111112', 'Signature 1.0 TSI AT', 'Automatic', 'Petrol', 999, 1509000, ARRAY['5-Star GNCAP Safety', 'Cruise Control', '8-inch Touchscreen']),
+    ('c1111111-1111-1111-1111-111111111126', 'b1111111-1111-1111-1111-111111111112', 'Prestige 1.5 TSI DSG', 'DCT', 'Petrol', 1498, 1869000, ARRAY['Active Cylinder Tech', 'Electric Sunroof', 'Subwoofer Audio'])
 ON CONFLICT (id) DO NOTHING;

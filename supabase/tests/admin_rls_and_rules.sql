@@ -180,6 +180,43 @@ BEGIN
     PERFORM COUNT(*) FROM public.bookings;
     RESET ROLE;
 
+    -- 12. Buyer atomic group RPCs + formatted member summaries + dealer non-recursive RLS + cancelled release
+    PERFORM set_config('request.jwt.claims', jsonb_build_object('sub', v_buyer_id::text, 'role', 'authenticated')::text, true);
+    SET LOCAL ROLE authenticated;
+    v_res := public.create_buying_group(v_variant_id, v_district_id);
+    IF COALESCE((v_res->>'success')::boolean, false) <> true THEN
+        RAISE EXCEPTION 'TEST FAIL [12a]: create_buying_group failed: %', v_res::text;
+    END IF;
+    v_group_id := (v_res->>'group_id')::uuid;
+
+    IF NOT EXISTS (SELECT 1 FROM public.get_group_member_summaries(v_group_id) WHERE user_id = v_buyer_id AND display_name = 'Escalation A.') THEN
+        RAISE EXCEPTION 'TEST FAIL [12b]: get_group_member_summaries did not return redacted display name.';
+    END IF;
+
+    RESET ROLE;
+    INSERT INTO public.dealer_users (dealership_id, user_id, role) VALUES (v_dealership_id, v_dealer_user_id, 'owner') ON CONFLICT DO NOTHING;
+    PERFORM set_config('autogroup.internal_rpc', 'true', true);
+    UPDATE public.dealerships SET status = 'VERIFIED' WHERE id = v_dealership_id;
+    PERFORM set_config('autogroup.internal_rpc', '', true);
+
+    PERFORM set_config('request.jwt.claims', jsonb_build_object('sub', v_dealer_user_id::text, 'role', 'authenticated')::text, true);
+    SET LOCAL ROLE authenticated;
+    PERFORM COUNT(*) FROM public.groups;
+    PERFORM COUNT(*) FROM public.group_members;
+    PERFORM COUNT(*) FROM public.quotations;
+    RESET ROLE;
+
+    PERFORM set_config('request.jwt.claims', jsonb_build_object('sub', v_super_id::text, 'role', 'authenticated')::text, true);
+    PERFORM public.admin_manage_group(v_group_id, 'CANCEL', NULL, 'SQL cleanup release test');
+
+    PERFORM set_config('request.jwt.claims', jsonb_build_object('sub', v_buyer_id::text, 'role', 'authenticated')::text, true);
+    SET LOCAL ROLE authenticated;
+    v_res := public.create_buying_group(v_variant_id, v_district_id);
+    IF COALESCE((v_res->>'success')::boolean, false) <> true THEN
+        RAISE EXCEPTION 'TEST FAIL [12c]: Cancelled group still locked buyer out of variant.';
+    END IF;
+    RESET ROLE;
+
     RAISE NOTICE 'ALL ADMIN SQL RLS & BUSINESS RULE TESTS PASSED CLEANLY!';
 END $$;
 

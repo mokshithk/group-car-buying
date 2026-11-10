@@ -2,6 +2,10 @@
 # Reads SUPABASE_ACCESS_TOKEN and SUPABASE_DB_PASSWORD strictly from current session $env:.
 # Contains zero secrets. Stops immediately if any command fails.
 
+param(
+  [switch]$MigrationsOnly
+)
+
 $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path -Parent $PSScriptRoot)
 
@@ -49,6 +53,11 @@ Invoke-Step "Ensure Confirm email remains OFF (local .env.local SMTP handles OTP
 
 Invoke-Step "Run non-destructive SQL RLS & business-rule test suite" {
   node scripts/db-admin-ops.mjs run-sql-file supabase/tests/admin_rls_and_rules.sql
+}
+
+if ($MigrationsOnly) {
+  Write-Host "`nMigrationsOnly complete (existing super_admin password & .env.test untouched)." -ForegroundColor Green
+  exit 0
 }
 
 Invoke-Step "Provision 6 disposable @autogroup.in test accounts into gitignored .env.test" {
