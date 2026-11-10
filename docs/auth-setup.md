@@ -6,9 +6,9 @@ This guide describes how AutoGroup handles 6-digit Email OTP verification, Admin
 
 ## 1. Local & Vercel SMTP OTP Portal (Active Default)
 
-All interactive 6-digit OTP flows (buyer registration, dealership registration, forgot-password recovery, and `/admin/accept-invite` confirmation) route through shared handlers in [src/server/otpService.ts](../src/server/otpService.ts) (`POST /api/auth/send-otp`, `POST /api/auth/verify-otp`, `POST /api/auth/reset-password`, `GET /api/auth/smtp-status`):
+All interactive 6-digit OTP flows (buyer registration, dealership registration, forgot-password recovery, and `/admin/accept-invite` confirmation) route through shared handlers in [api/_lib/otpService.ts](../api/_lib/otpService.ts) (`POST /api/auth/send-otp`, `POST /api/auth/verify-otp`, `POST /api/auth/reset-password`, `GET /api/auth/smtp-status`):
 - **Localhost (`npm run dev` / `npm run preview`)**: Served by Vite middleware in [src/server/smtpPlugin.ts](../src/server/smtpPlugin.ts), reading `.env.local` / `.env`.
-- **Vercel Deployment**: Served by Vercel Serverless Functions in `api/auth/` (`smtp-status.ts`, `send-otp.ts`, `verify-otp.ts`, `reset-password.ts`) with SPA routing configured in [vercel.json](../vercel.json). OTP challenge and recovery verification tokens use stateless AES-256-GCM encryption (`src/server/otpToken.ts`) so verification works reliably across stateless serverless instances and mobile browsers.
+- **Vercel Deployment**: Served by Vercel Serverless Functions in `api/auth/` (`smtp-status.ts`, `send-otp.ts`, `verify-otp.ts`, `reset-password.ts`) with SPA routing configured in [vercel.json](../vercel.json). OTP challenge and recovery verification tokens use stateless AES-256-GCM encryption (`api/_lib/otpToken.ts`) so verification works reliably across stateless serverless instances and mobile browsers.
 
 1. Configure your `.env.local` file locally (gitignored — never commit secrets):
    ```env

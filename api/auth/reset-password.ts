@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { handleResetPassword } from '../../src/server/otpService';
+import { handleResetPassword } from '../_lib/otpService.js';
 
 export default async function handler(req: IncomingMessage & { body?: unknown }, res: ServerResponse) {
   await handleResetPassword(req, res);

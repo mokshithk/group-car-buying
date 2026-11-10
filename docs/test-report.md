@@ -94,7 +94,7 @@ Visual layout verification was executed across `360px` mobile, `768px` tablet, a
    - *Fix*: Added explicit PostgreSQL type casts in provisioning SQL and refined the E2E selector to target visible audit-log rows cleanly.
 7. **Vercel Static Hosting Missing `/api/auth/*` & Forgot Password Silent Advance**:
    - *Symptom*: Hosted Vercel builds served static `dist/` without Vite's `smtpEmailPlugin` middleware, causing `POST /api/auth/send-otp` to `404` while `ForgotPasswordPage.tsx` swallowed the error and opened the OTP screen anyway with no email sent; additionally, `supabase.auth.updateUser` lacked a logged-in recovery session.
-   - *Fix*: Extracted shared stateless handlers into `src/server/otpService.ts` + AES-256-GCM tokens (`src/server/otpToken.ts`), added Vercel Serverless Functions `api/auth/{smtp-status,send-otp,verify-otp,reset-password}.ts` + `vercel.json` rewrites, failed closed on non-OK `/api/auth/send-otp` responses, and completed password updates via `/api/auth/reset-password`.
+   - *Fix*: Extracted shared stateless handlers into `api/_lib/otpService.ts` + AES-256-GCM tokens (`api/_lib/otpToken.ts`), added Vercel Serverless Functions `api/auth/{smtp-status,send-otp,verify-otp,reset-password}.ts` with Node ESM `.js` imports + `vercel.json` rewrites, failed closed on non-OK `/api/auth/send-otp` responses, and completed password updates via `/api/auth/reset-password`.
 
 ---
 

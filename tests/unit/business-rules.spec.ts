@@ -12,7 +12,7 @@ import {
   sha256Hex,
   generateInviteToken,
 } from '../../src/lib/adminHelpers';
-import { sealToken, unsealToken, safeCodeEquals, type OtpChallengePayload } from '../../src/server/otpToken';
+import { sealToken, unsealToken, safeCodeEquals, type OtpChallengePayload } from '../../api/_lib/otpToken.js';
 
 test.describe('Unit Tests: Core Business Rules', () => {
   // Test 1: formatINR formatting

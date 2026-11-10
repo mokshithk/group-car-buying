@@ -4,7 +4,7 @@ import {
   handleSendOtp,
   handleVerifyOtp,
   handleResetPassword,
-} from './otpService';
+} from '../../api/_lib/otpService.js';
 
 /**
  * Vite dev/preview middleware mounting the shared /api/auth/* OTP & password-reset handlers.

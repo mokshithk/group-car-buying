@@ -10,7 +10,7 @@ import {
   safeCodeEquals,
   type OtpChallengePayload,
   type OtpVerifiedPayload,
-} from './otpToken';
+} from './otpToken.js';
 
 interface DiskOtpEntry {
   code: string;

@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { handleVerifyOtp } from '../../src/server/otpService';
+import { handleVerifyOtp } from '../_lib/otpService.js';
 
 export default async function handler(req: IncomingMessage & { body?: unknown }, res: ServerResponse) {
   await handleVerifyOtp(req, res);
