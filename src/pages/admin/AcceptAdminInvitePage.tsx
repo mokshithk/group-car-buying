@@ -32,6 +32,7 @@ export function AcceptAdminInvitePage() {
   const [isValidating, setIsValidating] = useState(true);
 
   const [otpVerified, setOtpVerified] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [submitError, setSubmitError] = useState('');
@@ -83,6 +84,16 @@ export function AcceptAdminInvitePage() {
     e.preventDefault();
     setSubmitError('');
 
+    if (!inviteInfo?.email) {
+      setSubmitError('Invitation email is missing.');
+      return;
+    }
+
+    if (inviteInfo.account_exists && !currentPassword) {
+      setSubmitError('Enter your current account password to confirm account conversion.');
+      return;
+    }
+
     if (!strength.valid) {
       setSubmitError(strength.error || 'Password does not meet admin security policy.');
       return;
@@ -94,16 +105,42 @@ export function AcceptAdminInvitePage() {
 
     setIsSubmitting(true);
     try {
-      const { error: pwErr } = await supabase.auth.updateUser({ password });
-      if (pwErr) throw pwErr;
+      if (inviteInfo.account_exists) {
+        // Existing buyer/dealer explicitly allowed via convert_existing: sign in & upgrade password
+        const { error: signInErr } = await supabase.auth.signInWithPassword({
+          email: inviteInfo.email,
+          password: currentPassword,
+        });
+        if (signInErr) throw signInErr;
+
+        const { error: pwErr } = await supabase.auth.updateUser({ password });
+        if (pwErr) throw pwErr;
+      } else {
+        // Brand-new admin account: email already verified via .env.local SMTP OTP; create session via signUp
+        const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+          email: inviteInfo.email,
+          password,
+          options: {
+            data: {
+              full_name: inviteInfo.email.split('@')[0],
+              role: 'buyer',
+            },
+          },
+        });
+        if (signUpErr) throw signUpErr;
+        if (!signUpData.session) {
+          throw new Error(
+            'Supabase did not issue an immediate session (Confirm email must be OFF when using local .env SMTP OTP).'
+          );
+        }
+      }
 
       const { error: acceptErr } = await supabase.rpc('accept_admin_invite', {
         p_token_hash: tokenHash,
       });
       if (acceptErr) throw acceptErr;
 
-      if (inviteInfo?.account_exists) {
-        // Clear any prior buyer/dealer sessions on other tabs or devices after role conversion
+      if (inviteInfo.account_exists) {
         await supabase.auth.signOut({ scope: 'others' }).catch(() => {});
       }
 
@@ -111,7 +148,7 @@ export function AcceptAdminInvitePage() {
       toast({
         type: 'success',
         title: 'Administrator Access Activated',
-        message: `Welcome! You are now signed in as ${inviteInfo?.role || 'admin'}.`,
+        message: `Welcome! You are now signed in as ${inviteInfo.role || 'admin'}.`,
       });
       navigate('/admin/dashboard', { replace: true });
     } catch (err: unknown) {
@@ -179,11 +216,9 @@ export function AcceptAdminInvitePage() {
         {!otpVerified ? (
           <OtpVerification
             email={inviteInfo.email || ''}
-            type="email"
-            provider="supabase_otp"
-            allowCreateUser={!inviteInfo.account_exists}
+            type="signup"
             title="Verify Invited Email Address"
-            description={`Enter the 6-digit OTP sent to ${inviteInfo.email} to confirm ownership before setting your administrator password.`}
+            description={`Enter the 6-digit OTP sent to ${inviteInfo.email} via your local SMTP portal before setting your administrator password.`}
             onSuccess={() => setOtpVerified(true)}
           />
         ) : (
@@ -198,6 +233,18 @@ export function AcceptAdminInvitePage() {
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>{submitError}</span>
               </div>
+            )}
+
+            {inviteInfo.account_exists && (
+              <Input
+                label="Current Account Password *"
+                type="password"
+                value={currentPassword}
+                onChange={(e) => setCurrentPassword(e.target.value)}
+                leftIcon={<Lock className="w-4 h-4" />}
+                required
+                autoComplete="current-password"
+              />
             )}
 
             <Input
