@@ -45,6 +45,12 @@ import { AdminCataloguePage } from '@/pages/admin/AdminCataloguePage';
 import { AdminDistrictsPage } from '@/pages/admin/AdminDistrictsPage';
 import { AdminGroupsPage } from '@/pages/admin/AdminGroupsPage';
 import { AdminGroupDetailPage } from '@/pages/admin/AdminGroupDetailPage';
+import { AdminQuotationsPage } from '@/pages/admin/AdminQuotationsPage';
+import { AdminBookingsPage } from '@/pages/admin/AdminBookingsPage';
+import { AdminBookingDetailPage } from '@/pages/admin/AdminBookingDetailPage';
+import { AdminReportsPage } from '@/pages/admin/AdminReportsPage';
+import { AdminReportDetailPage } from '@/pages/admin/AdminReportDetailPage';
+import { AdminRatingsPage } from '@/pages/admin/AdminRatingsPage';
 import { ForcePasswordChangePage } from '@/pages/admin/ForcePasswordChangePage';
 
 import { isSupabaseConfigured } from '@/lib/supabase';
@@ -353,6 +359,54 @@ export default function App() {
                   element={
                     <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
                       <AdminGroupDetailPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/quotations"
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <AdminQuotationsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/bookings"
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <AdminBookingsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/bookings/:id"
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <AdminBookingDetailPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/reports"
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <AdminReportsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/reports/:id"
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <AdminReportDetailPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/ratings"
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <AdminRatingsPage />
                     </ProtectedRoute>
                   }
                 />
