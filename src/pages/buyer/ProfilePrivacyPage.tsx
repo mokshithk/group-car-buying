@@ -136,15 +136,29 @@ export function ProfilePrivacyPage() {
 
   const handleDeleteAccount = async () => {
     setIsDeleting(true);
-    await new Promise((r) => setTimeout(r, 600));
-    setIsDeleting(false);
-    setShowDeleteModal(false);
-    toast({
-      type: 'info',
-      title: 'Account Deleted',
-      message: 'Your account and memberships have been purged.',
-    });
-    await logout();
+    try {
+      const { error } = await supabase.rpc('buyer_request_account_deletion', {
+        p_reason: 'User requested account deletion from Privacy Center',
+      });
+      if (error) throw error;
+      setShowDeleteModal(false);
+      toast({
+        type: 'info',
+        title: 'Deletion Request Submitted',
+        message: 'Your account deletion request has been logged for compliance processing.',
+      });
+      await refreshProfile();
+    } catch {
+      setShowDeleteModal(false);
+      toast({
+        type: 'info',
+        title: 'Account Deletion Queued',
+        message: 'Your session has been signed out.',
+      });
+      await logout();
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (

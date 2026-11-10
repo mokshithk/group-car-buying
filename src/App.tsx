@@ -37,6 +37,9 @@ import { DealerNotificationsPage } from '@/pages/dealer/DealerNotificationsPage'
 import { ShowroomProfilePage } from '@/pages/dealer/ShowroomProfilePage';
 import { StaffManagementPage } from '@/pages/dealer/StaffManagementPage';
 import { AdminDealersPage } from '@/pages/admin/AdminDealersPage';
+import { AdminDealerDetailPage } from '@/pages/admin/AdminDealerDetailPage';
+import { AdminBuyersPage } from '@/pages/admin/AdminBuyersPage';
+import { AdminBuyerDetailPage } from '@/pages/admin/AdminBuyerDetailPage';
 import { AdminDashboardPage } from '@/pages/admin/AdminDashboardPage';
 import { ForcePasswordChangePage } from '@/pages/admin/ForcePasswordChangePage';
 
@@ -290,6 +293,30 @@ export default function App() {
                   element={
                     <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
                       <AdminDealersPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/dealers/:id"
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <AdminDealerDetailPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/buyers"
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <AdminBuyersPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/buyers/:id"
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <AdminBuyerDetailPage />
                     </ProtectedRoute>
                   }
                 />

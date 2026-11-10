@@ -195,7 +195,10 @@
 - [x] **Admin Task 2**: Admin Layout Shell, Idle Timeout, Re-auth Modal & Dashboard (`add admin layout and dashboard`)
   - Built `AdminLayout` (grouped sidebar, breadcrumbs, persistent `"Signed in as <email> (Admin)"` label, 30-min idle timeout with 1-min warning modal, mobile slide-over drawer)
   - Built shared `DataTable` (sticky headers, tabular numbers, sorting, pagination, skeleton/empty/error states), `ReAuthModal` (password verification + mandatory reason), `AdminCharts` (30-day SVG trend chart), and `AdminDashboardPage` (`/admin/dashboard`)
-- [ ] **Admin Task 3**: Dealer & Buyer Management (`add dealer and buyer management`)
+- [x] **Admin Task 3**: Dealer & Buyer Management (`add dealer and buyer management`)
+  - Refactored `AdminDealersPage` (`/admin/dealers`) with `AdminLayout`, `DataTable` pagination/sorting, CSV export, and `ReAuthModal` -> `admin_set_dealership_status`
+  - Built `AdminDealerDetailPage` (`/admin/dealers/:id`) displaying profile, GSTIN, brands, districts, staff, quotes, bookings, ratings, reports, and status history
+  - Built `AdminBuyersPage` (`/admin/buyers`) and `AdminBuyerDetailPage` (`/admin/buyers/:id`) with search/filters, suspend/reactivate/deactivate (`ReAuthModal`), and real deletion request processing synced with `ProfilePrivacyPage`
 - [ ] **Admin Task 4**: Catalogue, Districts & Groups Pages (`add catalogue, districts and groups pages`)
 - [ ] **Admin Task 5**: Quotations, Bookings/Refunds, Reports & Ratings (`add bookings, reports and ratings pages`)
 - [ ] **Admin Task 6**: Admin Invites, Accept Invite & Admin Account Pages (`add admin invites and account page`)
