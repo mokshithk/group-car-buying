@@ -26,7 +26,6 @@ interface AdminBookingRow {
   dealership?: { id: string; name: string; status: string } | null;
   group?: {
     id: string;
-    name: string;
     variant?: { name: string; model?: { name: string } | null } | null;
   } | null;
 }
@@ -52,7 +51,7 @@ export function AdminBookingsPage() {
       const { data, error: fetchErr } = await supabase
         .from('bookings')
         .select(
-          '*, dealership:dealerships(id, name, status), group:groups(id, name, variant:variants(name, model:models(name)))'
+          '*, dealership:dealerships(id, name, status), group:groups(id, variant:variants(name, model:models(name)))'
         )
         .order('created_at', { ascending: false });
 

@@ -26,7 +26,6 @@ interface AdminQuoteRow {
   dealership?: { id: string; name: string; status: string } | null;
   group?: {
     id: string;
-    name: string;
     status: string;
     district?: { name: string } | null;
     variant?: { name: string; model?: { name: string } | null } | null;
@@ -68,7 +67,7 @@ export function AdminQuotationsPage() {
         supabase
           .from('quotations')
           .select(
-            '*, dealership:dealerships(id, name, status), group:groups(id, name, status, district:districts(name), variant:variants(name, model:models(name)))'
+            '*, dealership:dealerships(id, name, status), group:groups(id, status, district:districts(name), variant:variants(name, model:models(name)))'
           )
           .order('created_at', { ascending: false }),
         supabase
@@ -112,7 +111,7 @@ export function AdminQuotationsPage() {
       if (completeFilter === 'INCOMPLETE' && row.is_complete) return false;
 
       if (q) {
-        const hay = `${row.dealership?.name || ''} ${row.group?.name || ''} ${row.group?.variant?.model?.name || ''} ${row.group?.variant?.name || ''} ${row.group?.district?.name || ''}`.toLowerCase();
+        const hay = `${row.dealership?.name || ''} ${row.group_id} ${row.group?.variant?.model?.name || ''} ${row.group?.variant?.name || ''} ${row.group?.district?.name || ''}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
@@ -181,8 +180,8 @@ export function AdminQuotationsPage() {
           </div>
           <div className="text-[11px] text-slate-500">
             Group:{' '}
-            <Link to={`/admin/groups/${row.group_id}`} className="text-brand-600 hover:underline">
-              {row.group?.name || 'Buying Group'}
+            <Link to={`/admin/groups/${row.group_id}`} className="text-brand-600 hover:underline font-mono">
+              #{row.group_id.slice(0, 8)}
             </Link>{' '}
             ({row.group?.district?.name || '—'})
           </div>

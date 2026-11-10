@@ -30,7 +30,6 @@ interface BookingDetailData {
   buyer?: { id: string; full_name: string; email?: string | null; phone?: string | null } | null;
   group?: {
     id: string;
-    name: string;
     district?: { name: string } | null;
     variant?: { name: string; model?: { name: string; manufacturer?: { name: string } | null } | null } | null;
   } | null;
@@ -79,7 +78,7 @@ export function AdminBookingDetailPage() {
         supabase
           .from('bookings')
           .select(
-            '*, dealership:dealerships(id, name, status, contact_email, contact_phone), buyer:profiles(id, full_name, email, phone), group:groups(id, name, district:districts(name), variant:variants(name, model:models(name, manufacturer:manufacturers(name))))'
+            '*, dealership:dealerships(id, name, status, contact_email, contact_phone), buyer:profiles(id, full_name, email, phone), group:groups(id, district:districts(name), variant:variants(name, model:models(name, manufacturer:manufacturers(name))))'
           )
           .eq('id', id)
           .maybeSingle(),
@@ -301,7 +300,7 @@ export function AdminBookingDetailPage() {
                     {booking.group.variant?.name}
                   </div>
                   <Link to={`/admin/groups/${booking.group.id}`} className="text-brand-600 hover:underline">
-                    {booking.group.name} ({booking.group.district?.name})
+                    Group #{booking.group.id.slice(0, 8)} ({booking.group.district?.name})
                   </Link>
                 </div>
               )}
