@@ -24,6 +24,15 @@ export interface DealerRegistrationData {
   password: string;
 }
 
+export interface OtpDispatchResult {
+  success: boolean;
+  error?: string;
+  alreadyRegistered?: boolean;
+  devOtp?: string;
+  smtpError?: string;
+  channel?: string;
+}
+
 interface AuthContextType {
   user: User | null;
   profile: Profile | null;
@@ -37,8 +46,9 @@ interface AuthContextType {
     dealershipStatus?: DealershipStatus;
     isUnconfirmedEmail?: boolean;
   }>;
-  registerBuyer: (data: BuyerRegistrationData) => Promise<{ success: boolean; error?: string; requiresEmailConfirmation?: boolean; devOtp?: string }>;
-  registerDealer: (data: DealerRegistrationData) => Promise<{ success: boolean; error?: string; requiresEmailConfirmation?: boolean; devOtp?: string }>;
+  requestSignupOtp: (email: string, fullName?: string) => Promise<OtpDispatchResult>;
+  registerBuyer: (data: BuyerRegistrationData) => Promise<{ success: boolean; error?: string; requiresEmailConfirmation?: boolean }>;
+  registerDealer: (data: DealerRegistrationData) => Promise<{ success: boolean; error?: string; requiresEmailConfirmation?: boolean }>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<{ profile: Profile | null; dealership: Dealership | null } | undefined>;
 }
@@ -256,11 +266,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const requestSignupOtp = async (email: string, fullName?: string): Promise<OtpDispatchResult> => {
+    try {
+      const cleanEmail = email.trim().toLowerCase();
+      if (!cleanEmail || !cleanEmail.includes('@')) {
+        return { success: false, error: 'Please enter a valid email address.' };
+      }
+
+      if (isSupabaseConfigured()) {
+        try {
+          const { data: isRegistered, error: rpcErr } = await supabase.rpc('is_email_registered', {
+            p_email: cleanEmail,
+          });
+          if (!rpcErr && isRegistered === true) {
+            return {
+              success: false,
+              alreadyRegistered: true,
+              error: 'This email is already registered. Please sign in or reset your password.',
+            };
+          }
+        } catch {
+          // Proceed if RPC check is unavailable
+        }
+      }
+
+      const otpRes = await fetch('/api/auth/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: cleanEmail, type: 'signup', fullName }),
+      });
+
+      const otpData = await otpRes.json();
+      if (!otpData.success) {
+        return { success: false, error: otpData.error || 'Failed to dispatch OTP email.' };
+      }
+
+      return {
+        success: true,
+        devOtp: otpData.devOtp,
+        smtpError: otpData.smtpError,
+        channel: otpData.channel,
+      };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Unable to send OTP verification code.';
+      return { success: false, error: msg };
+    }
+  };
+
   const registerBuyer = async (data: BuyerRegistrationData): Promise<{
     success: boolean;
     error?: string;
     requiresEmailConfirmation?: boolean;
-    devOtp?: string;
   }> => {
     setIsLoading(true);
     try {
@@ -268,27 +324,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { success: false, error: 'Database backend is not configured.' };
       }
 
-      let devOtp: string | undefined;
-
-      // 1. Dispatch OTP via local SMTP portal (configured in .env.local)
-      try {
-        const otpRes = await fetch('/api/auth/send-otp', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: data.email, type: 'signup', fullName: data.fullName }),
-        });
-        const otpData = await otpRes.json();
-        if (otpData.devOtp) {
-          devOtp = otpData.devOtp;
-        }
-      } catch (e) {
-        if (import.meta.env.DEV) {
-          console.warn('Local SMTP dispatch warning:', e);
-        }
-      }
-
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: data.email,
+        email: data.email.trim().toLowerCase(),
         password: data.password,
         options: {
           data: {
@@ -307,22 +344,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         let msg = authError.message;
         if (msg.includes('rate limit') || (authError as any).code === 'over_email_send_rate_limit') {
-          msg = 'Email rate limit exceeded. Please wait a few moments before trying again or configure SMTP in .env.local.';
+          msg = 'Email rate limit exceeded. Please wait a few moments before trying again.';
         } else if (msg.includes('invalid') || (authError as any).code === 'email_address_invalid') {
           msg = 'Please enter a valid email address.';
-        } else if (msg.toLowerCase().includes('sending confirmation email') || msg.toLowerCase().includes('confirmation email')) {
-          // Cloud Supabase email rejected/failed -> Local SMTP portal handles confirmation seamlessly!
-          return { success: true, requiresEmailConfirmation: true, devOtp };
         } else if ((authError as any).code === 'user_already_exists' || msg.toLowerCase().includes('already registered')) {
-          // Auto-sign in if password matches existing account
-          const signRes = await supabase.auth.signInWithPassword({ email: data.email, password: data.password });
+          const signRes = await supabase.auth.signInWithPassword({
+            email: data.email.trim().toLowerCase(),
+            password: data.password,
+          });
           if (signRes.data?.session) {
             await fetchProfileAndDealership(signRes.data.user.id);
             return { success: true, requiresEmailConfirmation: false };
           }
           return {
             success: false,
-            error: 'This email is already registered. Please sign in, or reset your password if you forgot it.',
+            error: 'This email is already registered. Please sign in or reset your password.',
           };
         }
         return { success: false, error: msg };
@@ -332,7 +368,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Requirement D.5: If user exists and is already verified, identities array is empty
       if (authData.user.identities && authData.user.identities.length === 0) {
-        const signRes = await supabase.auth.signInWithPassword({ email: data.email, password: data.password });
+        const signRes = await supabase.auth.signInWithPassword({
+          email: data.email.trim().toLowerCase(),
+          password: data.password,
+        });
         if (signRes.data?.session) {
           await fetchProfileAndDealership(signRes.data.user.id);
           return { success: true, requiresEmailConfirmation: false };
@@ -343,7 +382,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
       }
 
-      return { success: true, requiresEmailConfirmation: true, devOtp };
+      if (authData.session) {
+        await fetchProfileAndDealership(authData.user.id);
+        return { success: true, requiresEmailConfirmation: false };
+      }
+
+      // Sign in explicitly if session wasn't attached directly
+      const signInRes = await supabase.auth.signInWithPassword({
+        email: data.email.trim().toLowerCase(),
+        password: data.password,
+      });
+      if (signInRes.data?.session) {
+        await fetchProfileAndDealership(signInRes.data.user.id);
+        return { success: true, requiresEmailConfirmation: false };
+      }
+
+      return { success: true, requiresEmailConfirmation: true };
     } catch (err: unknown) {
       if (import.meta.env.DEV) {
         console.error('Buyer registration exception:', err);
@@ -359,7 +413,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     success: boolean;
     error?: string;
     requiresEmailConfirmation?: boolean;
-    devOtp?: string;
   }> => {
     setIsLoading(true);
     try {
@@ -367,27 +420,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { success: false, error: 'Database backend is not configured.' };
       }
 
-      let devOtp: string | undefined;
-
-      // 1. Dispatch OTP via local SMTP portal (configured in .env.local)
-      try {
-        const otpRes = await fetch('/api/auth/send-otp', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: data.email, type: 'signup', fullName: data.ownerName }),
-        });
-        const otpData = await otpRes.json();
-        if (otpData.devOtp) {
-          devOtp = otpData.devOtp;
-        }
-      } catch (e) {
-        if (import.meta.env.DEV) {
-          console.warn('Local SMTP dispatch warning:', e);
-        }
-      }
-
       const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: data.email,
+        email: data.email.trim().toLowerCase(),
         password: data.password,
         options: {
           data: {
@@ -410,14 +444,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         let msg = authError.message;
         if (msg.includes('rate limit') || (authError as any).code === 'over_email_send_rate_limit') {
-          msg = 'Email rate limit exceeded. Please wait a few moments before trying again or configure SMTP in .env.local.';
+          msg = 'Email rate limit exceeded. Please wait a few moments before trying again.';
         } else if (msg.includes('invalid') || (authError as any).code === 'email_address_invalid') {
           msg = 'Please enter a valid email address.';
-        } else if (msg.toLowerCase().includes('sending confirmation email') || msg.toLowerCase().includes('confirmation email')) {
-          // Cloud Supabase email rejected/failed -> Local SMTP portal handles confirmation seamlessly!
-          return { success: true, requiresEmailConfirmation: true, devOtp };
         } else if ((authError as any).code === 'user_already_exists' || msg.toLowerCase().includes('already registered')) {
-          const signRes = await supabase.auth.signInWithPassword({ email: data.email, password: data.password });
+          const signRes = await supabase.auth.signInWithPassword({
+            email: data.email.trim().toLowerCase(),
+            password: data.password,
+          });
           if (signRes.data?.session) {
             await fetchProfileAndDealership(signRes.data.user.id);
             return { success: true, requiresEmailConfirmation: false };
@@ -434,7 +468,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Requirement D.5: If user exists and is already verified, identities array is empty
       if (authData.user.identities && authData.user.identities.length === 0) {
-        const signRes = await supabase.auth.signInWithPassword({ email: data.email, password: data.password });
+        const signRes = await supabase.auth.signInWithPassword({
+          email: data.email.trim().toLowerCase(),
+          password: data.password,
+        });
         if (signRes.data?.session) {
           await fetchProfileAndDealership(signRes.data.user.id);
           return { success: true, requiresEmailConfirmation: false };
@@ -445,7 +482,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         };
       }
 
-      return { success: true, requiresEmailConfirmation: true, devOtp };
+      if (authData.session) {
+        await fetchProfileAndDealership(authData.user.id);
+        return { success: true, requiresEmailConfirmation: false };
+      }
+
+      const signInRes = await supabase.auth.signInWithPassword({
+        email: data.email.trim().toLowerCase(),
+        password: data.password,
+      });
+      if (signInRes.data?.session) {
+        await fetchProfileAndDealership(signInRes.data.user.id);
+        return { success: true, requiresEmailConfirmation: false };
+      }
+
+      return { success: true, requiresEmailConfirmation: true };
     } catch (err: unknown) {
       if (import.meta.env.DEV) {
         console.error('Dealer registration exception:', err);
@@ -490,6 +541,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         role: profile?.role ?? null,
         isLoading,
         login,
+        requestSignupOtp,
         registerBuyer,
         registerDealer,
         logout,

@@ -14,6 +14,7 @@ export function ForgotPasswordPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [devOtp, setDevOtp] = useState('');
+  const [smtpError, setSmtpError] = useState('');
   const [isNotRegistered, setIsNotRegistered] = useState(false);
   const [requestTimestamps, setRequestTimestamps] = useState<number[]>([]);
 
@@ -80,6 +81,7 @@ export function ForgotPasswordPage() {
 
       // 2. Dispatch recovery code via local SMTP portal (configured in .env.local)
       let recoveryDevOtp = '';
+      let recoverySmtpErr = '';
       try {
         const otpRes = await fetch('/api/auth/send-otp', {
           method: 'POST',
@@ -90,15 +92,14 @@ export function ForgotPasswordPage() {
         if (otpData.devOtp) {
           recoveryDevOtp = otpData.devOtp;
         }
-      } catch (_) {}
-
-      // Optional attempt via Supabase (non-blocking if cloud SMTP is unconfigured)
-      try {
-        await supabase.auth.resetPasswordForEmail(cleanEmail);
+        if (otpData.smtpError) {
+          recoverySmtpErr = otpData.smtpError;
+        }
       } catch (_) {}
 
       // Advance to OTP verification step
       setDevOtp(recoveryDevOtp);
+      setSmtpError(recoverySmtpErr);
       setStep('otp');
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Unable to dispatch recovery code.';
@@ -167,8 +168,11 @@ export function ForgotPasswordPage() {
             email={email}
             type="recovery"
             title="Verify Recovery Code"
-            description={`We sent a 6-digit recovery code to ${email}`}
+            description={`Enter the 6-digit recovery code for ${email}`}
             initialDevOtp={devOtp}
+            smtpError={smtpError}
+            otpAlreadyDispatched={true}
+            enableSupabaseLinkAutoDetect={false}
             onSuccess={() => {
               setStep('new-password');
             }}

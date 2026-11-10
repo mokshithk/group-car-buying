@@ -9,6 +9,9 @@ interface OtpVerificationProps {
   title?: string;
   description?: string;
   initialDevOtp?: string;
+  smtpError?: string;
+  otpAlreadyDispatched?: boolean;
+  enableSupabaseLinkAutoDetect?: boolean;
   onSuccess: () => void | Promise<void>;
   onChangeEmail?: () => void;
 }
@@ -19,6 +22,9 @@ export function OtpVerification({
   title,
   description,
   initialDevOtp,
+  smtpError: initialSmtpError,
+  otpAlreadyDispatched = false,
+  enableSupabaseLinkAutoDetect = false,
   onSuccess,
   onChangeEmail,
 }: OtpVerificationProps) {
@@ -29,7 +35,9 @@ export function OtpVerification({
   const [resendCooldown, setResendCooldown] = useState(60);
   const [resendNotice, setResendNotice] = useState('');
   const [devCode, setDevCode] = useState<string | null>(initialDevOtp || null);
+  const [smtpErr, setSmtpErr] = useState<string | null>(initialSmtpError || null);
   const [isSmtpConfigured, setIsSmtpConfigured] = useState<boolean | null>(null);
+  const hasDispatchedRef = useRef(otpAlreadyDispatched);
 
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -40,7 +48,13 @@ export function OtpVerification({
     }
   }, []);
 
-  // 2. Query SMTP status and dispatch initial code if not provided
+  // 2. Sync props if updated
+  useEffect(() => {
+    if (initialDevOtp) setDevCode(initialDevOtp);
+    if (initialSmtpError) setSmtpErr(initialSmtpError);
+  }, [initialDevOtp, initialSmtpError]);
+
+  // 3. Query SMTP status and dispatch initial OTP ONLY if parent didn't already dispatch it
   useEffect(() => {
     fetch('/api/auth/smtp-status')
       .then((r) => r.json())
@@ -49,7 +63,8 @@ export function OtpVerification({
       })
       .catch(() => {});
 
-    if (!initialDevOtp && email) {
+    if (!hasDispatchedRef.current && email) {
+      hasDispatchedRef.current = true;
       fetch('/api/auth/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -57,15 +72,18 @@ export function OtpVerification({
       })
         .then((r) => r.json())
         .then((data) => {
-          if (data.devOtp) {
-            setDevCode(data.devOtp);
+          if (data.devOtp) setDevCode(data.devOtp);
+          if (data.smtpError) setSmtpErr(data.smtpError);
+          if (data.channel === 'smtp') {
+            setDevCode(null);
+            setSmtpErr(null);
           }
         })
         .catch(() => {});
     }
-  }, [email, type, initialDevOtp]);
+  }, [email, type]);
 
-  // 3. 60-second cooldown countdown timer
+  // 4. 60-second cooldown countdown timer
   useEffect(() => {
     if (resendCooldown <= 0) return;
     const interval = setInterval(() => {
@@ -74,21 +92,18 @@ export function OtpVerification({
     return () => clearInterval(interval);
   }, [resendCooldown]);
 
-  // 4. Auto-detect email link confirmation (if user clicks the link in their email)
+  // 5. Optional Supabase email link confirmation detector (disabled during local OTP flow)
   useEffect(() => {
+    if (!enableSupabaseLinkAutoDetect) return;
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (
-        event === 'SIGNED_IN' ||
-        event === 'USER_UPDATED' ||
-        (session?.user && (session.user as any).email_confirmed_at)
-      ) {
+      if (event === 'SIGNED_IN' && session?.user && (session.user as any).email_confirmed_at) {
         await onSuccess();
       }
     });
     return () => subscription.unsubscribe();
-  }, [onSuccess]);
+  }, [enableSupabaseLinkAutoDetect, onSuccess]);
 
   // Handle individual digit change
   const handleChange = (index: number, value: string) => {
@@ -105,12 +120,11 @@ export function OtpVerification({
     next[index] = digit;
     setDigits(next);
 
-    // Auto-focus next input
     if (index < 5) {
       inputRefs.current[index + 1]?.focus();
     }
 
-    // Auto-submit on 6th digit (Requirement D.1)
+    // Auto-submit when all 6 digits are filled
     if (next.every((d) => d.length === 1)) {
       handleVerify(undefined, next.join(''));
     }
@@ -156,44 +170,52 @@ export function OtpVerification({
     setIsVerifying(true);
 
     try {
-      // 1. First check local SMTP verification endpoint
-      const portalRes = await fetch('/api/auth/verify-otp', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, code: token, type }),
-      });
-      const portalData = await portalRes.json();
-      if (portalData.success) {
-        await onSuccess();
-        return;
-      }
-    } catch (_) {
-      // Fall through to Supabase if endpoint fails
-    }
+      // 1. Verify against local SMTP OTP server
+      let handledByPortal = false;
+      try {
+        const portalRes = await fetch('/api/auth/verify-otp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email, code: token, type }),
+        });
 
-    try {
-      // 2. Fallback to Supabase verifyOtp
-      const { error: verifyErr } = await supabase.auth.verifyOtp({
-        email,
-        token,
-        type,
-      });
-
-      if (verifyErr) {
-        let friendlyMsg = verifyErr.message;
-        if (friendlyMsg.toLowerCase().includes('expired')) {
-          friendlyMsg = 'This verification code has expired. Please click "Resend Code" for a new one.';
-        } else if (friendlyMsg.toLowerCase().includes('invalid')) {
-          friendlyMsg = 'Invalid verification code. Please check your email inbox and enter the 6-digit code.';
-        } else if (friendlyMsg.toLowerCase().includes('rate limit')) {
-          friendlyMsg = 'Too many attempts. Please wait a few moments before trying again.';
+        if (portalRes.status !== 404) {
+          handledByPortal = true;
+          const portalData = await portalRes.json();
+          if (portalData.success) {
+            await onSuccess();
+            return;
+          }
+          setError(portalData.error || 'Incorrect verification code. Please try again.');
+          return;
         }
-        setError(friendlyMsg);
-        setIsVerifying(false);
-        return;
+      } catch {
+        // Local endpoint unreachable (e.g. static hosting) -> fall through to Supabase
       }
 
-      await onSuccess();
+      if (!handledByPortal) {
+        // 2. Fallback to Supabase verifyOtp
+        const { error: verifyErr } = await supabase.auth.verifyOtp({
+          email,
+          token,
+          type,
+        });
+
+        if (verifyErr) {
+          let friendlyMsg = verifyErr.message;
+          if (friendlyMsg.toLowerCase().includes('expired')) {
+            friendlyMsg = 'This verification code has expired. Please click "Resend Code" for a new one.';
+          } else if (friendlyMsg.toLowerCase().includes('invalid')) {
+            friendlyMsg = 'Invalid verification code. Please check your email inbox and enter the 6-digit code.';
+          } else if (friendlyMsg.toLowerCase().includes('rate limit')) {
+            friendlyMsg = 'Too many attempts. Please wait a few moments before trying again.';
+          }
+          setError(friendlyMsg);
+          return;
+        }
+
+        await onSuccess();
+      }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Verification failed.';
       setError(msg);
@@ -211,7 +233,6 @@ export function OtpVerification({
     setResendNotice('');
 
     try {
-      // 1. Dispatch via local SMTP portal
       const res = await fetch('/api/auth/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -219,11 +240,15 @@ export function OtpVerification({
       });
       const data = await res.json();
 
-      if (data.devOtp) {
-        setDevCode(data.devOtp);
-        setResendNotice('Fresh verification code generated.');
-      } else if (data.channel === 'smtp' || data.success) {
+      if (data.channel === 'smtp') {
+        setDevCode(null);
+        setSmtpErr(null);
+        setIsSmtpConfigured(true);
         setResendNotice('A fresh 6-digit verification code has been sent to your email.');
+      } else if (data.devOtp) {
+        setDevCode(data.devOtp);
+        setSmtpErr(data.smtpError || null);
+        setResendNotice('Fresh verification code generated.');
       }
 
       setResendCooldown(60);
@@ -251,7 +276,7 @@ export function OtpVerification({
         <CardDescription className="text-xs text-slate-600 max-w-sm mx-auto leading-relaxed mt-1">
           {description || (
             <>
-              We sent a verification email with a 6-digit code to <strong className="text-slate-900">{email}</strong>.
+              Enter the 6-digit verification code for <strong className="text-slate-900">{email}</strong>.
               {onChangeEmail && (
                 <button
                   type="button"
@@ -267,34 +292,53 @@ export function OtpVerification({
       </CardHeader>
 
       <CardContent className="space-y-5 pt-3">
-        {/* Dev Mode Banner (shown when SMTP credentials are not configured in .env.local) */}
+        {/* Status Banner: Real SMTP vs Missing/Failed Credentials */}
         {devCode && (
-          <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex items-center justify-between shadow-subtle">
-            <div className="flex items-center gap-2">
-              <KeyRound className="w-4 h-4 text-amber-600 shrink-0" />
-              <div>
-                <span className="font-semibold text-amber-800">[Dev OTP]</span> Code:{' '}
-                <strong className="font-mono text-sm tracking-wider text-amber-950 font-bold">{devCode}</strong>
-              </div>
+          <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-2 shadow-subtle">
+            <div className="text-[11px] text-amber-800 leading-snug">
+              {smtpErr ? (
+                <span>
+                  <strong>SMTP delivery failed:</strong> {smtpErr}. Verify{' '}
+                  <code className="bg-amber-100 px-1 rounded">SMTP_EMAIL</code> &amp;{' '}
+                  <code className="bg-amber-100 px-1 rounded">SMTP_PASSWORD</code> in{' '}
+                  <code className="bg-amber-100 px-1 rounded">.env.local</code>.
+                </span>
+              ) : (
+                <span>
+                  <strong>Email not sent:</strong> Fill{' '}
+                  <code className="bg-amber-100 px-1 rounded">SMTP_EMAIL</code> &amp;{' '}
+                  <code className="bg-amber-100 px-1 rounded">SMTP_PASSWORD</code> in{' '}
+                  <code className="bg-amber-100 px-1 rounded">.env.local</code> to receive emails in Gmail.
+                </span>
+              )}
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                const split = devCode.split('');
-                setDigits(split);
-                handleVerify(undefined, devCode);
-              }}
-              className="px-2.5 py-1 bg-amber-200 hover:bg-amber-300 text-amber-900 font-semibold rounded-lg text-xs transition-colors flex items-center gap-1"
-            >
-              <Sparkles className="w-3 h-3" /> Auto-Fill
-            </button>
+            <div className="flex items-center justify-between pt-1 border-t border-amber-200/70">
+              <div className="flex items-center gap-1.5">
+                <KeyRound className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                <span>
+                  [Dev OTP] Code:{' '}
+                  <strong className="font-mono text-sm tracking-wider text-amber-950 font-bold">{devCode}</strong>
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const split = devCode.split('');
+                  setDigits(split);
+                  handleVerify(undefined, devCode);
+                }}
+                className="px-2.5 py-1 bg-amber-200 hover:bg-amber-300 text-amber-900 font-semibold rounded-lg text-xs transition-colors flex items-center gap-1"
+              >
+                <Sparkles className="w-3 h-3" /> Auto-Fill
+              </button>
+            </div>
           </div>
         )}
 
         {isSmtpConfigured && !devCode && (
           <div className="p-2.5 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-800 flex items-center gap-2">
             <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0" />
-            <span>Dispatched via Gmail SMTP (.env.local)</span>
+            <span>6-digit OTP email sent via Gmail SMTP (.env.local)</span>
           </div>
         )}
 
@@ -343,7 +387,7 @@ export function OtpVerification({
             disabled={!isComplete || isVerifying}
             rightIcon={<ArrowRight className="w-4 h-4" />}
           >
-            Verify & Continue
+            Verify &amp; Continue
           </Button>
         </form>
 

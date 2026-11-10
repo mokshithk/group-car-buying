@@ -32,9 +32,11 @@ export function DealerRegisterPage() {
   const [selectedBrands, setSelectedBrands] = useState<string[]>(['Tata Motors']);
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [alreadyRegistered, setAlreadyRegistered] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [showOtp, setShowOtp] = useState(false);
   const [devOtp, setDevOtp] = useState('');
+  const [smtpError, setSmtpError] = useState('');
 
   useEffect(() => {
     fetchDistricts().then((dList) => {
@@ -45,7 +47,7 @@ export function DealerRegisterPage() {
     }).catch(console.error);
   }, [districtId]);
 
-  const { registerDealer, refreshProfile } = useAuth();
+  const { requestSignupOtp, registerDealer, refreshProfile } = useAuth();
   const navigate = useNavigate();
 
   const handleBrandToggle = (brand: string) => {
@@ -60,6 +62,7 @@ export function DealerRegisterPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setAlreadyRegistered(false);
     if (selectedBrands.length === 0) {
       setError('Please select at least one authorized OEM brand.');
       return;
@@ -72,28 +75,16 @@ export function DealerRegisterPage() {
     setError('');
     setIsLoading(true);
 
-    const res = await registerDealer({
-      dealershipName,
-      ownerName,
-      email,
-      phone,
-      districtId,
-      address,
-      gstNumber,
-      brands: selectedBrands,
-      password,
-    });
+    const otpRes = await requestSignupOtp(email, ownerName);
     setIsLoading(false);
 
-    if (res.success) {
-      if (res.requiresEmailConfirmation) {
-        if (res.devOtp) setDevOtp(res.devOtp);
-        setShowOtp(true);
-      } else {
-        navigate('/dealer/pending-approval', { replace: true });
-      }
+    if (otpRes.success) {
+      setDevOtp(otpRes.devOtp || '');
+      setSmtpError(otpRes.smtpError || '');
+      setShowOtp(true);
     } else {
-      setError(res.error || 'Dealership registration failed');
+      setAlreadyRegistered(Boolean(otpRes.alreadyRegistered));
+      setError(otpRes.error || 'Unable to start verification.');
     }
   };
 
@@ -116,7 +107,24 @@ export function DealerRegisterPage() {
             type="signup"
             title="Verify Dealership Account"
             initialDevOtp={devOtp}
+            smtpError={smtpError}
+            otpAlreadyDispatched={true}
+            enableSupabaseLinkAutoDetect={false}
             onSuccess={async () => {
+              const res = await registerDealer({
+                dealershipName,
+                ownerName,
+                email,
+                phone,
+                districtId,
+                address,
+                gstNumber,
+                brands: selectedBrands,
+                password,
+              });
+              if (!res.success) {
+                throw new Error(res.error || 'Dealership registration failed after OTP verification.');
+              }
               await refreshProfile();
               navigate('/dealer/pending-approval', { replace: true });
             }}
@@ -159,8 +167,18 @@ export function DealerRegisterPage() {
           </CardHeader>
           <CardContent>
             {error && (
-              <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-medium text-rose-700">
-                {error}
+              <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs font-medium text-rose-700 space-y-1.5">
+                <div>{error}</div>
+                {alreadyRegistered && (
+                  <div className="flex items-center gap-3 pt-1">
+                    <Link to="/login" className="font-semibold underline hover:text-rose-900">
+                      Sign In &rarr;
+                    </Link>
+                    <Link to="/forgot-password" className="font-semibold underline hover:text-rose-900">
+                      Reset Password
+                    </Link>
+                  </div>
+                )}
               </div>
             )}
 

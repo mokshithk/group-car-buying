@@ -109,15 +109,27 @@ test.describe('Group Car Buying Platform E2E Suite', () => {
     // Submit registration
     await submitBtn.click();
 
-    // Should transition to OTP verification screen, dashboard, or profile-pending screen (if migration 004 pending)
-    const otpScreen = page.locator('text=Verify Buyer Account')
-      .or(page.locator('text=Verify Your Email'))
-      .or(page.locator('input[aria-label="Digit 1"]'))
-      .or(page.locator('text=Welcome back'))
-      .or(page.locator('text=Account Profile Not Found'))
-      .or(page.locator('.bg-rose-50'));
-    await expect(otpScreen.first()).toBeVisible({ timeout: 15000 });
+    // Must transition strictly to OTP verification screen and remain there (no auto-bypass)
+    await expect(page.locator('text=Verify Buyer Account')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('input[aria-label="Digit 1"]')).toBeVisible();
+    await page.waitForTimeout(800);
+    await expect(page.locator('text=Verify Buyer Account')).toBeVisible();
+
     await page.screenshot({ path: path.join(screenshotsDir, '1440px-buyer-otp-screen.png'), fullPage: false });
+
+    // Entering an incorrect OTP must keep user on OTP screen and display an error
+    for (let i = 1; i <= 6; i++) {
+      await page.fill(`input[aria-label="Digit ${i}"]`, '0');
+    }
+    await expect(page.locator('.bg-rose-50')).toBeVisible({ timeout: 5000 });
+    await expect(page.locator('.bg-rose-50')).toContainText(/Incorrect verification code/i);
+
+    // Using Dev OTP Auto-Fill (when SMTP credentials are not configured) completes registration
+    const autoFillBtn = page.locator('button:has-text("Auto-Fill")');
+    if (await autoFillBtn.isVisible()) {
+      await autoFillBtn.click();
+      await expect(page).toHaveURL(/\/buyer\/dashboard/, { timeout: 15000 });
+    }
   });
 
   test('5. Dealer registration UI, validation, and transition to OTP verification screen', async ({ page }) => {
@@ -154,14 +166,11 @@ test.describe('Group Car Buying Platform E2E Suite', () => {
 
     await submitBtn.click();
 
-    // Should transition to Dealership OTP verification screen, pending review, or profile-pending screen
-    const otpHeading = page.locator('text=Verify Dealership Account')
-      .or(page.locator('text=Verification Code'))
-      .or(page.locator('input[aria-label="Digit 1"]'))
-      .or(page.locator('text=Application Under Review'))
-      .or(page.locator('text=Account Profile Not Found'))
-      .or(page.locator('.bg-rose-50'));
-    await expect(otpHeading.first()).toBeVisible({ timeout: 15000 });
+    // Must transition strictly to Dealership OTP verification screen and remain there
+    await expect(page.locator('text=Verify Dealership Account')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('input[aria-label="Digit 1"]')).toBeVisible();
+    await page.waitForTimeout(800);
+    await expect(page.locator('text=Verify Dealership Account')).toBeVisible();
     await page.screenshot({ path: path.join(screenshotsDir, '1440px-dealer-otp-screen.png'), fullPage: false });
   });
 

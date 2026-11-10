@@ -9,8 +9,50 @@ interface OtpEntry {
   attempts: number;
 }
 
-// In-memory OTP storage keyed by normalized email
-const otpStore = new Map<string, OtpEntry>();
+function getCacheFilePath(projectRoot: string): string {
+  const cacheDir = path.resolve(projectRoot, 'node_modules', '.cache');
+  if (!fs.existsSync(cacheDir)) {
+    fs.mkdirSync(cacheDir, { recursive: true });
+  }
+  return path.join(cacheDir, 'autogroup-otp-store.json');
+}
+
+function loadOtpStore(projectRoot: string): Map<string, OtpEntry> {
+  try {
+    const filePath = getCacheFilePath(projectRoot);
+    if (fs.existsSync(filePath)) {
+      const raw = fs.readFileSync(filePath, 'utf-8');
+      const parsed = JSON.parse(raw) as Record<string, OtpEntry>;
+      const now = Date.now();
+      const map = new Map<string, OtpEntry>();
+      for (const [k, v] of Object.entries(parsed)) {
+        if (v && v.expiresAt > now) {
+          map.set(k, v);
+        }
+      }
+      return map;
+    }
+  } catch {
+    // Ignore malformed cache
+  }
+  return new Map<string, OtpEntry>();
+}
+
+function saveOtpStore(projectRoot: string, store: Map<string, OtpEntry>): void {
+  try {
+    const filePath = getCacheFilePath(projectRoot);
+    const obj: Record<string, OtpEntry> = {};
+    const now = Date.now();
+    for (const [k, v] of store.entries()) {
+      if (v.expiresAt > now) {
+        obj[k] = v;
+      }
+    }
+    fs.writeFileSync(filePath, JSON.stringify(obj), 'utf-8');
+  } catch {
+    // Ignore cache write errors
+  }
+}
 
 function getEnvConfig(projectRoot: string) {
   const envFiles = ['.env.local', '.env'];
@@ -30,7 +72,8 @@ function getEnvConfig(projectRoot: string) {
           if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
             val = val.slice(1, -1);
           }
-          if (env[key] === undefined) {
+          // Only fill if not already set to a non-empty value
+          if (!env[key] && val) {
             env[key] = val;
           }
         }
@@ -38,11 +81,18 @@ function getEnvConfig(projectRoot: string) {
     }
   }
 
+  const smtpServer = env.SMTP_SERVER || process.env.SMTP_SERVER || 'smtp.gmail.com';
+  const rawPassword = env.SMTP_PASSWORD || process.env.SMTP_PASSWORD || '';
+  // Gmail App Passwords are often pasted with spaces like "abcd efgh ijkl mnop"
+  const smtpPassword = smtpServer.toLowerCase().includes('gmail')
+    ? rawPassword.replace(/\s+/g, '')
+    : rawPassword;
+
   return {
-    smtpEmail: env.SMTP_EMAIL || process.env.SMTP_EMAIL || '',
-    smtpPassword: env.SMTP_PASSWORD || process.env.SMTP_PASSWORD || '',
-    smtpServer: env.SMTP_SERVER || process.env.SMTP_SERVER || 'smtp.gmail.com',
-    smtpPort: env.SMTP_PORT || process.env.SMTP_PORT || '465',
+    smtpEmail: (env.SMTP_EMAIL || process.env.SMTP_EMAIL || '').trim(),
+    smtpPassword,
+    smtpServer: smtpServer.trim(),
+    smtpPort: (env.SMTP_PORT || process.env.SMTP_PORT || '465').trim(),
   };
 }
 
@@ -149,15 +199,17 @@ function setupMiddleware(server: ViteDevServer | PreviewServer) {
           return;
         }
 
-        // Generate 6-digit numeric OTP code
+        // Generate 6-digit numeric OTP code and persist to disk cache
         const code = Math.floor(100000 + Math.random() * 900000).toString();
         const expiresAt = Date.now() + 10 * 60 * 1000; // 10 minutes
+        const otpStore = loadOtpStore(projectRoot);
 
         otpStore.set(email, {
           code,
           expiresAt,
           attempts: 0,
         });
+        saveOtpStore(projectRoot, otpStore);
 
         const config = getEnvConfig(projectRoot);
         const hasSmtpCredentials = Boolean(config.smtpEmail && config.smtpPassword);
@@ -197,26 +249,27 @@ function setupMiddleware(server: ViteDevServer | PreviewServer) {
                 success: true,
                 message: `Verification code sent to ${email}`,
                 channel: 'smtp',
+                senderEmail: config.smtpEmail.replace(/(?<=.{3}).(?=.*@)/g, '*'),
               })
             );
             return;
           } catch (smtpErr: any) {
             console.error(`[SMTP Error] Delivery to ${email} failed:`, smtpErr?.message);
-            // Fallback gracefully so testing is never blocked
             res.setHeader('Content-Type', 'application/json');
             res.end(
               JSON.stringify({
                 success: true,
-                message: `SMTP connection failed (${smtpErr?.message}). Dev OTP fallback provided.`,
+                message: `SMTP delivery failed (${smtpErr?.message}). Dev OTP fallback active.`,
                 devOtp: code,
                 isDevMode: true,
+                reason: 'smtp_error',
                 smtpError: smtpErr?.message,
               })
             );
             return;
           }
         } else {
-          console.log(`[SMTP Dev Mode] SMTP_EMAIL or SMTP_PASSWORD not set in .env.local.`);
+          console.log(`[SMTP Dev Mode] SMTP_EMAIL or SMTP_PASSWORD not set in .env/.env.local.`);
           console.log(`[SMTP Dev Mode] OTP for ${email} is: ${code}`);
 
           res.setHeader('Content-Type', 'application/json');
@@ -226,6 +279,7 @@ function setupMiddleware(server: ViteDevServer | PreviewServer) {
               message: 'SMTP credentials not configured in .env.local. Dev OTP code active.',
               devOtp: code,
               isDevMode: true,
+              reason: 'smtp_not_configured',
             })
           );
           return;
@@ -252,16 +306,18 @@ function setupMiddleware(server: ViteDevServer | PreviewServer) {
           return;
         }
 
+        const otpStore = loadOtpStore(projectRoot);
         const entry = otpStore.get(email);
         if (!entry) {
           res.statusCode = 400;
           res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ success: false, error: 'No verification code was requested or it has expired. Please request a new code.' }));
+          res.end(JSON.stringify({ success: false, error: 'No verification code was requested or it has expired. Please click "Resend Code".' }));
           return;
         }
 
         if (Date.now() > entry.expiresAt) {
           otpStore.delete(email);
+          saveOtpStore(projectRoot, otpStore);
           res.statusCode = 400;
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({ success: false, error: 'Verification code has expired. Please click "Resend Code".' }));
@@ -271,6 +327,7 @@ function setupMiddleware(server: ViteDevServer | PreviewServer) {
         entry.attempts += 1;
         if (entry.attempts > 5) {
           otpStore.delete(email);
+          saveOtpStore(projectRoot, otpStore);
           res.statusCode = 429;
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({ success: false, error: 'Too many incorrect attempts. Please request a new verification code.' }));
@@ -278,6 +335,8 @@ function setupMiddleware(server: ViteDevServer | PreviewServer) {
         }
 
         if (entry.code !== code) {
+          otpStore.set(email, entry);
+          saveOtpStore(projectRoot, otpStore);
           res.statusCode = 400;
           res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({ success: false, error: 'Incorrect verification code. Please check your email and try again.' }));
@@ -286,6 +345,7 @@ function setupMiddleware(server: ViteDevServer | PreviewServer) {
 
         // Successfully verified
         otpStore.delete(email);
+        saveOtpStore(projectRoot, otpStore);
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify({ success: true, message: 'Code verified successfully.' }));
         return;
