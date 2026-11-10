@@ -17,6 +17,14 @@ export function isSuperAdminRole(role?: UserRole | string | null): boolean {
   return role === 'super_admin';
 }
 
+export function extractErrorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) return err.message;
+  if (err && typeof err === 'object' && 'message' in err && typeof (err as { message?: unknown }).message === 'string') {
+    return (err as { message: string }).message;
+  }
+  return fallback;
+}
+
 /**
  * Evaluates password strength for Admin accounts (min 12 chars + mix of classes).
  */

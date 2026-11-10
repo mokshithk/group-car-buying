@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabase';
 import { AdminLayout } from '@/components/admin/AdminLayout';
 import { DataTable, ColumnDef } from '@/components/admin/DataTable';
 import { ReAuthModal } from '@/components/admin/ReAuthModal';
-import { buildCsvContent, triggerCsvDownload } from '@/lib/adminHelpers';
+import { buildCsvContent, triggerCsvDownload, extractErrorMessage } from '@/lib/adminHelpers';
 import { Dealership, DealershipStatus, District } from '@/types';
 import { formatDate } from '@/lib/formatters';
 import { useToast } from '@/components/ui/Toast';
@@ -117,7 +117,7 @@ export function AdminDealersPage() {
       setRows(mapped);
       setTotalCount(count || 0);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to load dealerships.');
+      setError(extractErrorMessage(err, 'Failed to load dealerships.'));
     } finally {
       setIsLoading(false);
     }
