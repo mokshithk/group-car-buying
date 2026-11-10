@@ -167,10 +167,7 @@ export function AdminReportsPage() {
   return (
     <AdminLayout
       title="Reports & Disputes"
-      breadcrumbs={[
-        { label: 'Admin', to: '/admin/dashboard' },
-        { label: 'Reports & Disputes' },
-      ]}
+      breadcrumbs={[{ label: 'Reports & Disputes' }]}
       searchValue={searchQuery}
       onSearchChange={(v) => {
         setSearchQuery(v);

@@ -233,10 +233,7 @@ export function AdminRatingsPage() {
   return (
     <AdminLayout
       title="Ratings & Review Moderation"
-      breadcrumbs={[
-        { label: 'Admin', to: '/admin/dashboard' },
-        { label: 'Ratings' },
-      ]}
+      breadcrumbs={[{ label: 'Ratings' }]}
       searchValue={searchQuery}
       onSearchChange={(v) => {
         setSearchQuery(v);

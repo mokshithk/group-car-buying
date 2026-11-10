@@ -203,4 +203,4 @@
 - [x] **Admin Task 5**: Quotations, Bookings/Refunds, Reports & Ratings (`add bookings, reports and ratings pages`)
 - [x] **Admin Task 6**: Admin Invites, Accept Invite & Admin Account Pages (`add admin invites and account page`)
 - [x] **Admin Task 7**: Settings, Notifications, Audit Log, Exports & Group Expiry (`settings, notifications, audit log, exports and group expiry`)
-- [ ] **Admin Task 8**: Remote Migrations, First Admin & Test Setup, Full Test Suite & Docs (`tests, test report and documentation`)
+- [x] **Admin Task 8**: Remote Migrations, First Admin & Test Setup, Full Test Suite & Docs (`tests, test report and documentation`)

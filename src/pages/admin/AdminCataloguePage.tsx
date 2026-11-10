@@ -370,11 +370,12 @@ export function AdminCataloguePage() {
       breadcrumbs={[{ label: 'Catalogue' }]}
       searchValue={searchQuery}
       onSearchChange={setSearchQuery}
-      searchPlaceholder="Search manufacturer, model, variant..."
+      searchPlaceholder="Search brand, model..."
       headerActions={
         <Button
           variant="primary"
           size="sm"
+          className="whitespace-nowrap"
           leftIcon={<Plus className="w-3.5 h-3.5" />}
           onClick={() => {
             if (tab === 'manufacturers') openMfrModal();

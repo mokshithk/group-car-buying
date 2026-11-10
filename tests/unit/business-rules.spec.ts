@@ -2,6 +2,16 @@ import { test, expect } from '@playwright/test';
 import { formatINR } from '../../src/lib/formatters';
 import { calculateBuyerRefund, calculateDealerFaultRefund } from '../../src/lib/bookingService';
 import { isQuoteComplete, rankQuotes, analyzeQuotations } from '../../src/lib/quoteService';
+import {
+  isAdminRole,
+  isSuperAdminRole,
+  validateAdminPassword,
+  validatePlatformSetting,
+  detectQuoteOutliers,
+  buildCsvContent,
+  sha256Hex,
+  generateInviteToken,
+} from '../../src/lib/adminHelpers';
 
 test.describe('Unit Tests: Core Business Rules', () => {
   // Test 1: formatINR formatting
@@ -139,5 +149,80 @@ test.describe('Unit Tests: Core Business Rules', () => {
         exShowroomPrice: 1200000,
       })
     ).toBe(true);
+  });
+
+  // Test 5: Admin Role Helpers
+  test('5. admin role helpers distinguish super_admin, admin, buyer and dealer cleanly', () => {
+    expect(isAdminRole('super_admin')).toBe(true);
+    expect(isAdminRole('admin')).toBe(true);
+    expect(isAdminRole('buyer')).toBe(false);
+    expect(isAdminRole('dealer')).toBe(false);
+    expect(isAdminRole(null)).toBe(false);
+
+    expect(isSuperAdminRole('super_admin')).toBe(true);
+    expect(isSuperAdminRole('admin')).toBe(false);
+    expect(isSuperAdminRole('buyer')).toBe(false);
+  });
+
+  // Test 6: Admin Password Policy (min 12 chars + complexity)
+  test('6. validateAdminPassword enforces >= 12 characters and mixed character classes', () => {
+    expect(validateAdminPassword('Short1!').valid).toBe(false);
+    expect(validateAdminPassword('alllowercase1234').valid).toBe(false);
+    expect(validateAdminPassword('ALLUPPERCASE1234').valid).toBe(false);
+    expect(validateAdminPassword('NoDigitsOrSymbols').valid).toBe(false);
+    expect(validateAdminPassword('AdminStrongPass1').valid).toBe(true);
+    expect(validateAdminPassword('Admin!Strong#Pass').valid).toBe(true);
+  });
+
+  // Test 7: Platform Settings Validation (booking_amount + platform_fee < 10000)
+  test('7. validatePlatformSetting rejects booking_amount + platform_fee >= 10000 and bad types', () => {
+    const base = { booking_amount: '5000', platform_fee: '100' };
+
+    expect(validatePlatformSetting('booking_amount', '9899', base).valid).toBe(true); // 9999 < 10000
+    expect(validatePlatformSetting('booking_amount', '9900', base).valid).toBe(false); // 10000 >= 10000
+    expect(validatePlatformSetting('platform_fee', '5000', base).valid).toBe(false); // 10000 >= 10000
+    expect(validatePlatformSetting('platform_fee', '-1', base).valid).toBe(false);
+    expect(validatePlatformSetting('buyer_cancel_retention_percent', '105', base).valid).toBe(false);
+    expect(validatePlatformSetting('buyer_cancel_retention_percent', '10', base).valid).toBe(true);
+    expect(validatePlatformSetting('fee_refund_on_dealer_fault', 'true', base).valid).toBe(true);
+    expect(validatePlatformSetting('fee_refund_on_dealer_fault', 'maybe', base).valid).toBe(false);
+    expect(validatePlatformSetting('visibility_member_threshold', '0', base).valid).toBe(false);
+  });
+
+  // Test 8: Quote Outlier Detection (>= threshold% vs group median)
+  test('8. detectQuoteOutliers flags extreme high/low complete quotes against median', () => {
+    const quotes = [
+      { id: 'q1', group_id: 'g1', on_road_price: 1000000, is_complete: true },
+      { id: 'q2', group_id: 'g1', on_road_price: 1020000, is_complete: true },
+      { id: 'q3', group_id: 'g1', on_road_price: 1010000, is_complete: true }, // median = 10,10,000
+      { id: 'q4', group_id: 'g1', on_road_price: 1300000, is_complete: true }, // high outlier ~ +27.5%
+      { id: 'q5', group_id: 'g1', on_road_price: 800000, is_complete: false }, // incomplete
+    ];
+
+    const outliers = detectQuoteOutliers(quotes, 15);
+    expect(outliers.get('q1')?.isOutlier).toBe(false);
+    expect(outliers.get('q4')?.isOutlier).toBe(true);
+    expect(outliers.get('q4')?.direction).toBe('HIGH');
+  });
+
+  // Test 9: Formula-Safe RFC 4180 CSV Builder
+  test('9. buildCsvContent quotes commas/quotes and neutralizes spreadsheet formula injection', () => {
+    const csv = buildCsvContent(
+      ['Name', 'Formula', 'Notes'],
+      [['Tata, Nexon', '=CMD|calc', 'Line "A"']]
+    );
+    expect(csv).toBe('Name,Formula,Notes\r\n"Tata, Nexon",\'=CMD|calc,"Line ""A"""');
+  });
+
+  // Test 10: Admin Invite Token & SHA-256 Digest
+  test('10. generateInviteToken produces 48 hex chars and sha256Hex produces 64-char digest', async () => {
+    const tok1 = generateInviteToken();
+    const tok2 = generateInviteToken();
+    expect(tok1).toMatch(/^[0-9a-f]{48}$/);
+    expect(tok1).not.toBe(tok2);
+
+    const hash = await sha256Hex(tok1);
+    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(hash).not.toBe(tok1);
   });
 });

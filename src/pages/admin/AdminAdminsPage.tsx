@@ -397,13 +397,16 @@ export function AdminAdminsPage() {
   return (
     <AdminLayout
       title="Admins & Invitations"
-      breadcrumbs={[
-        { label: 'Admin', to: '/admin/dashboard' },
-        { label: 'Admins & Invites' },
-      ]}
+      breadcrumbs={[{ label: 'Admins & Invites' }]}
       headerActions={
-        <Button size="sm" variant="primary" onClick={() => setInviteFormOpen(true)}>
-          <UserPlus className="w-3.5 h-3.5 mr-1" /> Invite Admin
+        <Button
+          size="sm"
+          variant="primary"
+          onClick={() => setInviteFormOpen(true)}
+          leftIcon={<UserPlus className="w-3.5 h-3.5" />}
+          className="whitespace-nowrap"
+        >
+          Invite Admin
         </Button>
       }
     >

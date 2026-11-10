@@ -31,10 +31,14 @@ Built with **React 18**, **TypeScript**, **Tailwind CSS**, **Vite**, **Supabase*
 - **Quote Submission & Versioning**: Live on-road calculation with complete price versioning and audit history.
 - **Leads & Bookings Management**: Real-time feed of interested buyers and paid bookings with locked price snapshots.
 
-### Admin Module (`/admin/dealers`)
-- **Dealership Verification**: Dedicated administrative portal for reviewing dealership applications across All, Pending, Verified, Rejected, and Suspended statuses.
-- **Action Modals**: Approve, Reject (with required reason), and Suspend actions with confirmation modals.
-- **Audit Logging & Notifications**: Writes all status modifications to `audit_log` and issues notifications to dealership contacts.
+### Admin Console (`/admin/*` — `admin` & `super_admin`)
+- **Security & Access Control**: Shared `/login` entry; buyers & dealers receive a strict **403 Forbidden** screen on `/admin/*`; forced >= 12-character password change on first provisioned admin login; password re-authentication (`ReAuthModal`) on sensitive writes; 30-minute idle session timeout with 1-minute warning.
+- **Dashboard & Analytics (`/admin/dashboard`)**: 6 live metric cards, pending approvals queue, group status distribution, refund/retention summary, and a 30-day SVG trend chart.
+- **Dealers & Buyers Oversight (`/admin/dealers`, `/admin/buyers`)**: Search, district/status filters, detail views, approve/reject/suspend/reactivate showrooms (auto-deactivating quotes and flagging paid bookings on suspension), buyer suspension & privacy deletion workflow.
+- **Catalogue & Districts (`/admin/catalogue`, `/admin/districts`)**: Manage manufacturers, models, variants (with image URL + SVG fallback), and districts via soft activation/deactivation.
+- **Groups, Quotations, Bookings & Refunds (`/admin/groups`, `/admin/quotations`, `/admin/bookings`)**: Suspicious group flagging, manual/cron 1-member group expiry, quote outlier detection (>= threshold% vs group median) + full `quotation_versions` price history, dealer-fault forced cancellation refunds, and fallback delivery completion.
+- **Trust & Moderation (`/admin/reports`, `/admin/ratings`)**: Repeat-offender flagging, warning notifications / suspension actions, and hiding/unhiding abusive buyer reviews.
+- **Governance, System & Exports (`/admin/admins`, `/admin/settings`, `/admin/notifications`, `/admin/audit`, `/admin/exports`, `/admin/account`)**: One-time hashed admin invites with email OTP acceptance, `super_admin`-only settings enforcing `booking_amount + platform_fee < 10000`, broadcast announcements, append-only audit log explorer, and formula-safe CSV exports.
 
 ---
 
@@ -70,20 +74,17 @@ Run the SQL scripts in your Supabase SQL Editor in this exact order:
 3. `supabase/migrations/003_storage_and_indexes.sql` - Performance indexes and document storage.
 4. `supabase/migrations/004_auth_profile_trigger.sql` - Base automatic profile creation trigger.
 5. `supabase/migrations/005_dealer_verification_and_admin.sql` - Hardened trigger (`handle_new_user()`), admin dealership status mutation lock, and `is_email_registered()` function.
-6. `supabase/seed.sql` - Real catalog data (15 districts, 10 manufacturers, 12 models, 36 variants). Pure catalog with zero fake data.
-7. `supabase/seed_demo.sql` - (Optional) Realistic test dealerships, demo buying groups, and quotations.
-8. `supabase/test_setup.sql` - Provisions the 5 standardized test accounts for automated & manual verification.
+6. `supabase/migrations/006_admin_module.sql` - Admin role hierarchy (`admin`, `super_admin`), last `super_admin` guard, `admin_invites`, append-only `audit_log`, 13 platform settings, moderation flags, and `SECURITY DEFINER` RPCs.
+7. `supabase/migrations/007_fix_dealer_users_rls_recursion.sql` - `SECURITY DEFINER` helper `is_dealer_owner_of()` eliminating recursive RLS checks on `dealer_users`.
+8. `supabase/seed.sql` - Real catalog data (districts, manufacturers, models, variants). Pure catalog with zero fake data.
+9. `supabase/seed_demo.sql` - (Optional) Realistic test dealerships, demo buying groups, and quotations.
+10. `supabase/test_setup.sql` - Provisions standardized `@autogroup.in` test accounts for automated & manual verification.
+11. `supabase/make_first_admin.sql` - Documented SQL fallback to promote the initial `super_admin`.
 
-For complete 6-digit Email OTP configuration and email templates with `{{ .Token }}`, see [docs/auth-setup.md](docs/auth-setup.md).
+For 6-digit `.env.local` SMTP OTP setup and admin onboarding details, see [docs/auth-setup.md](docs/auth-setup.md).
 
 #### Admin Role Assignment Snippet
-To grant admin privileges to an account, run this query in your Supabase SQL Editor:
-```sql
-UPDATE public.profiles
-SET role = 'admin',
-    updated_at = NOW()
-WHERE id = (SELECT id FROM auth.users WHERE email = '<admin_email_address>');
-```
+To promote an existing registered user to initial `super_admin`, run [supabase/make_first_admin.sql](supabase/make_first_admin.sql) or `node scripts/db-admin-ops.mjs bootstrap-first-admin`.
 
 #### Manual Dealer Approval Snippet
 Newly registered dealerships start with status `PENDING` until approved via `/admin/dealers` or direct SQL:

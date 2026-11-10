@@ -200,11 +200,14 @@ export function AdminSettingsPage() {
           {isSuperAdmin && (
             <Button
               size="sm"
+              aria-label={`Save ${key}`}
               variant={isDirty ? 'primary' : 'outline'}
               disabled={!isDirty || !validation.valid}
               onClick={() => handleRequestSave(key)}
+              leftIcon={<Save className="w-3.5 h-3.5" />}
+              className="whitespace-nowrap"
             >
-              <Save className="w-3.5 h-3.5 mr-1" /> Save
+              Save
             </Button>
           )}
         </div>
@@ -215,10 +218,7 @@ export function AdminSettingsPage() {
   return (
     <AdminLayout
       title="Platform Settings"
-      breadcrumbs={[
-        { label: 'Admin', to: '/admin/dashboard' },
-        { label: 'Settings' },
-      ]}
+      breadcrumbs={[{ label: 'Settings' }]}
     >
       <div className="space-y-5 max-w-5xl">
         {/* Governance & Snapshot Note */}

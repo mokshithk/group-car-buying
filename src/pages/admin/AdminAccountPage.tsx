@@ -95,10 +95,7 @@ export function AdminAccountPage() {
   return (
     <AdminLayout
       title="My Admin Account"
-      breadcrumbs={[
-        { label: 'Admin', to: '/admin/dashboard' },
-        { label: 'My Account' },
-      ]}
+      breadcrumbs={[{ label: 'My Account' }]}
     >
       <div className="space-y-6 max-w-2xl">
         {/* Identity Card */}

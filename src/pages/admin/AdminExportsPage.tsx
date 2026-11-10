@@ -237,10 +237,7 @@ export function AdminExportsPage() {
   return (
     <AdminLayout
       title="Data Exports & Scheduled Jobs"
-      breadcrumbs={[
-        { label: 'Admin', to: '/admin/dashboard' },
-        { label: 'Exports' },
-      ]}
+      breadcrumbs={[{ label: 'Exports' }]}
     >
       <div className="space-y-6 max-w-5xl">
         {/* Date Filter Bar */}
@@ -291,8 +288,10 @@ export function AdminExportsPage() {
                 variant="outline"
                 isLoading={runningExport === c.id}
                 onClick={() => exportDataset(c.id)}
+                leftIcon={<Download className="w-3.5 h-3.5" />}
+                className="whitespace-nowrap"
               >
-                <Download className="w-3.5 h-3.5 mr-1.5" /> Download CSV
+                Download CSV
               </Button>
             </div>
           ))}

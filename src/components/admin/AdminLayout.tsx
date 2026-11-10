@@ -322,9 +322,9 @@ export function AdminLayout({
               </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2.5 sm:gap-3 w-full xl:w-auto max-w-full">
               {onSearchChange && (
-                <div className="w-48 sm:w-64">
+                <div className="w-full sm:w-56 min-w-0">
                   <Input
                     type="text"
                     value={searchValue || ''}
@@ -336,13 +336,17 @@ export function AdminLayout({
                 </div>
               )}
 
-              {headerActions}
+              {headerActions && (
+                <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                  {headerActions}
+                </div>
+              )}
 
-              <div className="flex items-center gap-2 pl-2 border-l border-slate-200 text-xs">
-                <span className="text-slate-700 font-medium whitespace-nowrap" data-testid="admin-signed-in-label">
+              <div className="flex flex-wrap items-center gap-2 sm:pl-2 sm:border-l sm:border-slate-200 text-xs max-w-full">
+                <span className="text-slate-700 font-medium break-words sm:whitespace-nowrap" data-testid="admin-signed-in-label">
                   Signed in as <strong className="text-slate-900">{signedInEmail}</strong> (Admin)
                 </span>
-                <span className="hidden sm:inline-block font-mono text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-700">
+                <span className="hidden sm:inline-block font-mono text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-700 shrink-0">
                   {isSuperAdmin ? 'super_admin' : 'admin'}
                 </span>
                 <Button
@@ -350,7 +354,7 @@ export function AdminLayout({
                   variant="ghost"
                   size="sm"
                   onClick={handleSignOut}
-                  className="text-slate-600 hover:text-slate-900"
+                  className="text-slate-600 hover:text-slate-900 whitespace-nowrap shrink-0"
                   leftIcon={<LogOut className="w-3.5 h-3.5" />}
                 >
                   Sign Out

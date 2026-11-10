@@ -123,7 +123,6 @@ export function AdminBookingDetailPage() {
       <AdminLayout
         title="Booking Details"
         breadcrumbs={[
-          { label: 'Admin', to: '/admin/dashboard' },
           { label: 'Bookings', to: '/admin/bookings' },
           { label: 'Loading...' },
         ]}
@@ -140,7 +139,6 @@ export function AdminBookingDetailPage() {
       <AdminLayout
         title="Booking Not Found"
         breadcrumbs={[
-          { label: 'Admin', to: '/admin/dashboard' },
           { label: 'Bookings', to: '/admin/bookings' },
           { label: 'Error' },
         ]}
@@ -191,7 +189,6 @@ export function AdminBookingDetailPage() {
     <AdminLayout
       title={`Booking ${booking.booking_code}`}
       breadcrumbs={[
-        { label: 'Admin', to: '/admin/dashboard' },
         { label: 'Bookings', to: '/admin/bookings' },
         { label: booking.booking_code },
       ]}

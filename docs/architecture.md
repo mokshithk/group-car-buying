@@ -1,8 +1,8 @@
 # Group Car Buying Platform - Architecture & Codebase Overview
 
-> Graphify Architectural Summary & System Topology
+> Architectural Summary & Module Topology (`graphify.detect` inventory: 165 files, 127 code modules)
 
-The **Group Car Buying Platform** connects prospective car buyers in the same district seeking the exact same vehicle variant into aggregated purchasing groups. Licensed dealerships compete to provide transparent on-road quotations. Buyers can signal non-binding interest or lock in their price via simulated booking.
+The **Group Car Buying Platform** connects prospective car buyers in the same district seeking the exact same vehicle variant into aggregated purchasing groups. Verified dealerships compete with itemized on-road quotations. Buyers can signal non-binding interest or lock in their price via simulated booking, while platform administrators govern dealership verification, buyer/group integrity, moderation, platform rules, and immutable auditing.
 
 ---
 
@@ -12,27 +12,33 @@ The **Group Car Buying Platform** connects prospective car buyers in the same di
 graph TD
     Client["Vite + React + Tailwind Frontend"]
     Router["React Router v6"]
-    AuthContext["Auth Context & Role Guards"]
-    
-    subgraph Frontend Pages
-        Public["Public Pages\n(Home, CarDetail, Login, Register Chooser)"]
-        Buyer["Buyer Module\n(Dashboard, Find Groups, Offers, Booking, Privacy)"]
-        Dealer["Dealer Module\n(Dashboard, Pending, Status, Eligible Groups, Submit Quote, Leads, Bookings)"]
-        Admin["Admin Module\n(/admin/dealers: Approve, Reject, Suspend)"]
+    AuthContext["AuthContext (Role, Status, Re-Auth, mustChangePassword)"]
+    SmtpPortal["Vite SMTP Portal Plugin (src/server/smtpPlugin.ts)"]
+
+    subgraph FrontendPages["Frontend Modules"]
+        Public["Public Pages (Home, CarDetail, Login, Register Chooser)"]
+        Buyer["Buyer Module (Dashboard, Groups, Offers, Booking, Privacy)"]
+        Dealer["Dealer Module (Dashboard, Pending, Status, Groups, Quotes, Leads, Bookings)"]
+        Admin["Admin Console (/admin/* — 24 pages with AdminLayout, Idle Timeout, ReAuthModal)"]
+        InvitePublic["Public Admin Invite Acceptance (/admin/accept-invite)"]
     end
 
-    subgraph Service Layer
-        GroupSvc["Group Service\n(Visibility, Joining, Milestones)"]
-        QuoteSvc["Quote Service\n(Price History, Incomplete Isolation, Live Ranking)"]
-        BookingSvc["Booking Service\n(Price Lock, Auto-Removal, Cancellation Math)"]
-        PaymentSvc["Simulated Payment Service\n(createPayment, verifyPayment, refundPayment)"]
+    subgraph ServiceLayer["Client Service & Domain Logic"]
+        AdminHelpers["adminHelpers.ts (RBAC, Validators, Outliers, CSV, SHA-256)"]
+        AdminSvc["adminService.ts (Dashboard Metrics & 30-Day Trend)"]
+        CatalogSvc["catalogService.ts (Active Models, Variants, Districts)"]
+        GroupSvc["groupService.ts (District Matching, Visibility)"]
+        QuoteSvc["quoteService.ts (Completeness, Ranking, Versioning)"]
+        BookingSvc["bookingService.ts (Price Lock, Refunds, Reviews)"]
+        PaymentSvc["paymentService.ts (Simulated Payments)"]
     end
 
-    subgraph Supabase Backend
-        Auth["Supabase Auth / Session / 6-Digit OTP"]
-        Postgres["PostgreSQL Database"]
-        RLS["Row-Level Security Policies"]
-        Triggers["Triggers & Functions\n(Visibility View, Price Versioning, Status Lock, Auto-Removal)"]
+    subgraph SupabaseBackend["Supabase Backend"]
+        Auth["Supabase Auth + Local .env.local SMTP OTP"]
+        Postgres["PostgreSQL Database (24 RLS Tables)"]
+        RLS["Row-Level Security + is_admin() / is_super_admin() / is_dealer_owner_of()"]
+        RPCs["SECURITY DEFINER Admin RPCs + Audit Writer (fn_write_audit_log)"]
+        Triggers["Triggers (Handle Signup, Profile Lock, Quote History, Group Expiry, Dealer Suspension)"]
     end
 
     Client --> Router
@@ -41,16 +47,26 @@ graph TD
     AuthContext --> Buyer
     AuthContext --> Dealer
     AuthContext --> Admin
-    
+    Router --> InvitePublic
+
+    Public --> SmtpPortal
+    InvitePublic --> SmtpPortal
+
+    Admin --> AdminHelpers
+    Admin --> AdminSvc
+    Admin --> CatalogSvc
+    Public --> CatalogSvc
     Buyer --> GroupSvc
     Buyer --> QuoteSvc
     Buyer --> BookingSvc
     BookingSvc --> PaymentSvc
-    
     Dealer --> GroupSvc
     Dealer --> QuoteSvc
     Dealer --> BookingSvc
-    
+
+    AdminSvc --> Postgres
+    Admin --> RPCs
+    RPCs --> Postgres
     GroupSvc --> Postgres
     QuoteSvc --> Postgres
     BookingSvc --> Postgres
@@ -65,123 +81,102 @@ graph TD
 ```
 D:\group-car-buying
 ├── docs/
-│   ├── architecture.md           # Graphify architectural overview & system topology
-│   ├── auth-setup.md             # Supabase dashboard, 6-digit OTP, SMTP & admin guide
-│   ├── progress.md               # Task checklist & verification state
-│   ├── test-report.md            # Comprehensive QA matrix & verification logs
-│   ├── email-templates/          # Responsive production transactional email templates
-│   │   ├── confirm-signup.html   # Table-based inline CSS signup confirmation
-│   │   ├── confirm-signup.txt    # Plain text signup fallback
-│   │   ├── reset-password.html   # Table-based inline CSS recovery template
-│   │   └── reset-password.txt    # Plain text recovery fallback
-│   └── screenshots/              # Responsive Playwright verification captures
-│       ├── 360px-landing.png     # Mobile viewport
-│       ├── 768px-landing.png     # Tablet viewport
-│       ├── 1440px-landing.png    # Desktop viewport
-│       ├── 1440px-car-detail.png
-│       ├── 1440px-register-chooser.png
-│       ├── 1440px-dealer-pending.png
-│       ├── 1440px-dealer-status.png
-│       └── 1440px-login-error.png
+│   ├── architecture.md           # System topology & business rules reference
+│   ├── auth-setup.md             # .env.local SMTP OTP, Supabase auth & admin provisioning guide
+│   ├── progress.md               # Milestone & admin task tracker
+│   ├── test-report.md            # Unit, SQL RLS & Playwright E2E verification report
+│   ├── email-templates/          # HTML/TXT 6-digit OTP templates
+│   └── screenshots/              # Verified 360px, 768px & 1440px Playwright captures
+├── scripts/
+│   ├── db-admin-ops.mjs          # Zero-secret pg/GoTrue CLI helper for schema checks & account setup
+│   ├── configure-auth-nonsecret.mjs # Applies Site URL & Confirm email setting via Management API
+│   └── run-remote-setup.ps1      # Fail-fast PowerShell runner using session env vars only
 ├── src/
+│   ├── server/
+│   │   └── smtpPlugin.ts         # Local Express/Vite middleware for /api/auth/send-otp & verify-otp
 │   ├── components/
-│   │   ├── auth/
-│   │   │   ├── OtpVerification.tsx  # 6-box auto-focus, paste & auto-submit OTP
-│   │   │   └── ProtectedRoute.tsx   # Role & status-aware route guardian
-│   │   ├── layout/
-│   │   │   ├── Navbar.tsx        # Responsive public header
-│   │   │   ├── Footer.tsx        # Standard footer & disclaimers
-│   │   │   ├── BuyerLayout.tsx   # Buyer shell with sidebar navigation
-│   │   │   └── DealerLayout.tsx  # Dealer shell with showroom navigation
-│   │   └── ui/                   # Reusable atomic UI components
-│   │       ├── Button.tsx
-│   │       ├── Card.tsx
-│   │       ├── Badge.tsx
-│   │       ├── Modal.tsx
-│   │       ├── Select.tsx
-│   │       ├── Tabs.tsx
-│   │       ├── Toast.tsx
-│   │       └── Skeleton.tsx
-│   ├── context/
-│   │   └── AuthContext.tsx       # Auth provider, role/status routing, session sync
-│   ├── lib/
-│   │   ├── bookingService.ts     # Booking workflows, cancellation calculations
-│   │   ├── catalogService.ts     # Live Supabase queries for vehicles, variants & districts
-│   │   ├── formatters.ts         # Currency (INR) and date/time formatters
-│   │   ├── groupService.ts       # Group matching and visibility queries
-│   │   ├── paymentService.ts     # Exactly 3 simulated functions: create, verify, refund
-│   │   ├── quoteService.ts       # Quotation rankings, incomplete quote isolation
-│   │   └── supabase.ts           # Supabase client instantiation (Node/Vite resilient)
-│   ├── pages/
 │   │   ├── admin/
-│   │   │   └── AdminDealersPage.tsx # Administrative dealer verification portal
-│   │   ├── auth/                 # Login, Register Chooser, Buyer/Dealer Reg, OTP, Password Reset
-│   │   ├── buyer/                # Dashboard, Find Groups, Group Detail, Offers, Bookings
-│   │   ├── dealer/               # Dashboard, Pending Approval, Status, Eligible Groups, Quotes
-│   │   └── public/               # Landing Page, Car Detail Page
-│   ├── types/
-│   │   └── database.ts           # TypeScript interfaces matching database schema
-│   ├── App.tsx                   # Main route configuration
-│   └── main.tsx                  # React entry point
+│   │   │   ├── AdminCharts.tsx   # 30-day SVG trend chart (signups, groups, bookings)
+│   │   │   ├── AdminLayout.tsx   # Sidebar shell, breadcrumbs, session badge, 30m idle timeout
+│   │   │   ├── DataTable.tsx     # Sticky headers, sorting, pagination, skeleton/empty/error states
+│   │   │   └── ReAuthModal.tsx   # Password verification + mandatory audit reason dialog
+│   │   ├── auth/
+│   │   │   ├── OtpVerification.tsx
+│   │   │   └── ProtectedRoute.tsx # Enforces buyer/dealer/admin/super_admin, 403 & forced pw change
+│   │   ├── feature/
+│   │   │   └── CarIllustration.tsx
+│   │   ├── layout/               # Navbar, Footer, BuyerLayout, DealerLayout
+│   │   └── ui/                   # Button, Card, Badge, Modal, Input, Select, Tabs, Toast, Skeleton
+│   ├── context/
+│   │   └── AuthContext.tsx
+│   ├── lib/
+│   │   ├── adminHelpers.ts
+│   │   ├── adminService.ts
+│   │   ├── bookingService.ts
+│   │   ├── catalogService.ts
+│   │   ├── formatters.ts
+│   │   ├── groupService.ts
+│   │   ├── paymentService.ts
+│   │   ├── quoteService.ts
+│   │   └── supabase.ts
+│   ├── pages/
+│   │   ├── admin/                # All 24 Admin Console & Auth Flow screens
+│   │   ├── auth/                 # Login, Register Chooser, Buyer/Dealer Reg, Verify OTP, Forgot Password
+│   │   ├── buyer/                # Buyer dashboard, groups, offers comparison, checkout, bookings, privacy
+│   │   ├── dealer/               # Dealer dashboard, pending, status, groups, quote submit, leads, bookings
+│   │   └── public/               # HomePage, CarDetailPage
+│   └── types/
+│       └── database.ts
 ├── supabase/
-│   ├── migrations/               # Ordered SQL migrations (001 to 005)
+│   ├── functions/send-admin-invite/ # Optional Deno Edge Function for automated invite emails
+│   ├── migrations/
 │   │   ├── 001_initial_schema.sql
 │   │   ├── 002_rls_policies.sql
-│   │   ├── 003_storage_and_indexes.sql
-│   │   ├── 004_auth_profile_trigger.sql
-│   │   └── 005_dealer_verification_and_admin.sql
-│   ├── seed.sql                  # Real catalog data (districts, manufacturers, models, variants)
-│   ├── seed_demo.sql             # Optional test data (sample dealerships, groups, quotes)
-│   ├── test_setup.sql            # Standardized 5-account test provisioning script
+│   │   ├── 003_auth_user_trigger.sql
+│   │   ├── 004_reliable_profile_trigger.sql
+│   │   ├── 005_dealer_verification_and_admin.sql
+│   │   ├── 006_admin_module.sql
+│   │   └── 007_fix_dealer_users_rls_recursion.sql
 │   ├── tests/
-│   │   └── rls_and_business_rules.sql # Automated SQL test suite for RLS and rules
-│   └── RUN_ME_FIRST.md           # Migration sequence & setup instructions
-├── tests/
-│   ├── unit/
-│   │   └── business-rules.spec.ts # 4 pure unit tests: formatINR, refunds, ranking, completeness
-│   └── e2e.spec.ts               # 13 Playwright end-to-end tests
-├── .env.test.example             # Template for test account credentials
-└── playwright.config.ts          # Playwright configuration (cached on D: drive)
+│   │   ├── rls_and_business_rules.sql
+│   │   └── admin_rls_and_rules.sql
+│   ├── cleanup_test_data.sql     # Targeted cleanup of synthetic @autogroup.in fixtures
+│   ├── make_first_admin.sql      # Documented SQL fallback to promote first super_admin
+│   ├── seed.sql                  # Real districts, manufacturers, models & variants catalog
+│   ├── seed_demo.sql             # Optional demonstration data
+│   ├── test_setup.sql            # Configures 6 standardized E2E test accounts
+│   └── RUN_ME_FIRST.md
+└── tests/
+    ├── unit/business-rules.spec.ts
+    ├── e2e.spec.ts
+    └── admin.e2e.spec.ts
 ```
 
 ---
 
-## 3. Core Business Rules & Database Logic
+## 3. Core Business Rules & Security Architecture
 
-### 3.1 Group Visibility Rule
-A group becomes visible to licensed dealerships only when:
-1. It has **3 or more active members**, OR
-2. It has **exactly 2 members and 20 days have elapsed** since group creation.
-Groups with 1 member are **never** visible to dealers.
+### 3.1 Group Visibility & Expiry Rules
+- A group becomes visible to verified dealerships once it reaches `visibility_member_threshold` (default `3`) active members, OR after `group_visibility_days_for_2_members` (default `20` days) with 2 members (`fn_is_group_visible_to_dealers`).
+- Rapid joins exceeding `suspicious_group_member_threshold` (default `5`) within `suspicious_group_window_minutes` (default `60`) flag `groups.is_suspicious = true`.
+- Unformed 1-member groups older than `group_expiry_days_for_1_member` (default `45` days) are expired via `fn_expire_1_member_groups()`.
 
-- **PostgreSQL Implementation**: `fn_is_group_visible_to_dealers(p_group_id UUID)`
-- **Exposed View**: `dealer_eligible_groups_view` filtering by dealership district and brand authorization.
+### 3.2 Quotation Integrity & Outlier Detection
+- Quotations omitting mandatory insurance or registration are marked `is_complete = false` and excluded from lowest-price badges and savings comparisons.
+- All price edits log immutable rows into `quotation_versions`.
+- Quotes deviating from the complete group median by >= `quote_outlier_threshold_percent` (default `15%`) are highlighted in `/admin/quotations`.
 
-### 3.2 Quotation Integrity & Incomplete Quote Isolation
-Quotations require itemization:
-- Ex-showroom price
-- Insurance premium
-- Registration & road safety taxes
-- Accessories & optional extras
-- Discounts & concessions
-- Total on-road price (auto-calculated)
+### 3.3 Admin Role Hierarchy, RLS & Audit Trail
+- Roles: `super_admin` (full control, admin invites/management, platform settings), `admin` (operations, moderation, read-only settings), `dealer`, `buyer`.
+- Signup triggers restrict public self-signup metadata strictly to `'buyer'` or `'dealer'`.
+- Helper functions `is_admin()`, `is_super_admin()`, and `is_dealer_owner_of()` execute as `SECURITY DEFINER` to eliminate RLS recursion (`42P17`) while keeping read/write checks isolated.
+- Direct client updates to sensitive columns (`profiles.role`, `profiles.status`, `must_change_password`, `dealerships.status`) are blocked by triggers; mutations must execute via `SECURITY DEFINER` RPCs that atomically write to append-only `audit_log`.
+- Last active `super_admin` cannot be demoted, deactivated, or deleted.
+- Sensitive admin actions require password re-authentication (`ReAuthModal`) and audit reason logging.
+- Admin sessions enforce a configurable 30-minute idle timeout with a 1-minute warning prompt.
 
-**Rule**: Any quotation missing mandatory components (e.g. insurance = 0 or registration = 0) is flagged with `is_complete = false` and strictly **excluded** from "Lowest Price" badges, price sorting, and savings calculations. Savings are only computed against other complete quotes.
-
-### 3.3 Dealership Status Protection
-Newly registered dealerships are initialized with `status = 'PENDING'`. A database trigger (`check_dealership_status_change()`) runs with `SECURITY DEFINER` and validates that only users with `role = 'admin'` can alter `status`, `rejection_reason`, or `verified_at`. If a dealership application is rejected, a mandatory `rejection_reason` must be provided and logged into `audit_log`.
-
-### 3.4 Price Versioning
-Every modification of a quotation by a dealership records a new record in `quotation_versions`, preserving an immutable audit log containing previous amounts, updated amounts, and version index.
-
-### 3.5 Price Lock & Simulated Payment
-When a buyer proceeds with "Book Now":
-- Booking Deposit: ₹5,000 (payable to Showroom account)
-- Platform Convenience Fee: ₹100 (payable to Platform)
-- Total: ₹5,100 (always configured below ₹10,000 threshold)
-- Payment Layer: Simulated via `createPayment`, `verifyPayment`, and `refundPayment`.
-- Upon successful payment (`PAID`), a database trigger (`trg_on_booking_paid`) automatically updates the member's group status to `BOOKED` and removes them from the active bidding group. The locked on-road price is frozen in an immutable snapshot.
-
-### 3.6 Cancellation & Refund Calculations
-- **Buyer Cancellation**: Showroom retains 5% of booking deposit (₹250). Remaining deposit (₹4,750) is refunded to buyer. Platform fee (₹100) is non-refundable. Total refunded = ₹4,750.
-- **Dealer Fault / Inability to Supply**: Showroom refund = 100% (₹5,000) + Platform fee refund = 100% (₹100). Total refunded = ₹5,100.
+### 3.4 Invitations, Settings & CSV Safety
+- `admin_invites` stores only SHA-256 hashes (`token_hash`) of single-use 7-day tokens, rate-limited to 10/hour per `super_admin`.
+- Pre-existing buyer/dealer emails are blocked from accepting admin invites unless `convert_existing = true` is explicitly set.
+- `booking_amount + platform_fee < 10000` INR is enforced at both UI validation (`validatePlatformSetting`) and DB (`admin_update_setting` + `chk_total_booking_fee`).
+- CSV exports escape quotes and neutralize leading `=`, `+`, `-`, `@` spreadsheet formula triggers (`buildCsvContent`), and log each export via `admin_log_export`.

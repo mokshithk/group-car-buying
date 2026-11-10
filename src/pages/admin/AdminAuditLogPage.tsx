@@ -205,10 +205,7 @@ export function AdminAuditLogPage() {
   return (
     <AdminLayout
       title="Immutable Audit Logs"
-      breadcrumbs={[
-        { label: 'Admin', to: '/admin/dashboard' },
-        { label: 'Audit Logs' },
-      ]}
+      breadcrumbs={[{ label: 'Audit Logs' }]}
       searchValue={searchQuery}
       onSearchChange={(v) => {
         setSearchQuery(v);
@@ -216,8 +213,14 @@ export function AdminAuditLogPage() {
       }}
       searchPlaceholder="Search actor, entity id, reason..."
       headerActions={
-        <Button size="sm" variant="outline" onClick={handleExportCsv}>
-          <Download className="w-3.5 h-3.5 mr-1" /> Export CSV
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleExportCsv}
+          leftIcon={<Download className="w-3.5 h-3.5" />}
+          className="whitespace-nowrap"
+        >
+          Export CSV
         </Button>
       }
     >

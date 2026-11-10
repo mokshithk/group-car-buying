@@ -113,14 +113,19 @@ export function AdminGroupsPage() {
     {
       key: 'variant',
       header: 'Vehicle & Variant',
-      render: (g) => (
-        <div>
-          <Link to={`/admin/groups/${g.id}`} className="font-bold text-slate-900 hover:text-brand-600 inline-flex items-center gap-1">
-            {g.variant?.model?.manufacturer?.name} {g.variant?.model?.name} <ExternalLink className="w-3 h-3 text-slate-400" />
-          </Link>
-          <div className="text-[11px] text-slate-500">{g.variant?.name}</div>
-        </div>
-      ),
+      render: (g) => {
+        const mfr = g.variant?.model?.manufacturer?.name || '';
+        const model = g.variant?.model?.name || '';
+        const title = mfr && model.toLowerCase().startsWith(mfr.toLowerCase()) ? model : `${mfr} ${model}`.trim();
+        return (
+          <div>
+            <Link to={`/admin/groups/${g.id}`} className="font-bold text-slate-900 hover:text-brand-600 inline-flex items-center gap-1">
+              {title} <ExternalLink className="w-3 h-3 text-slate-400" />
+            </Link>
+            <div className="text-[11px] text-slate-500">{g.variant?.name}</div>
+          </div>
+        );
+      },
     },
     {
       key: 'district',
@@ -224,8 +229,15 @@ export function AdminGroupsPage() {
       }}
       searchPlaceholder="Search model, variant, district..."
       headerActions={
-        <Button size="sm" variant="outline" isLoading={isExpiring} onClick={handleRunExpiry}>
-          <Clock className="w-3.5 h-3.5 mr-1" /> Run 1-Member Expiry
+        <Button
+          size="sm"
+          variant="outline"
+          isLoading={isExpiring}
+          onClick={handleRunExpiry}
+          leftIcon={<Clock className="w-3.5 h-3.5" />}
+          className="whitespace-nowrap"
+        >
+          Run 1-Member Expiry
         </Button>
       }
     >

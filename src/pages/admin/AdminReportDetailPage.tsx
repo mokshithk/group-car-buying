@@ -129,7 +129,6 @@ export function AdminReportDetailPage() {
       <AdminLayout
         title="Report Investigation"
         breadcrumbs={[
-          { label: 'Admin', to: '/admin/dashboard' },
           { label: 'Reports', to: '/admin/reports' },
           { label: 'Loading...' },
         ]}
@@ -146,7 +145,6 @@ export function AdminReportDetailPage() {
       <AdminLayout
         title="Report Not Found"
         breadcrumbs={[
-          { label: 'Admin', to: '/admin/dashboard' },
           { label: 'Reports', to: '/admin/reports' },
           { label: 'Error' },
         ]}
@@ -165,7 +163,6 @@ export function AdminReportDetailPage() {
     <AdminLayout
       title={`Dispute Investigation`}
       breadcrumbs={[
-        { label: 'Admin', to: '/admin/dashboard' },
         { label: 'Reports', to: '/admin/reports' },
         { label: report.reason },
       ]}

@@ -254,7 +254,7 @@ export function AdminDealersPage() {
       key: 'district_name',
       header: 'District',
       render: (d) => (
-        <span className="text-slate-700 whitespace-nowrap">
+        <span className="text-slate-700 block max-w-[140px]">
           {d.district_name ? `${d.district_name} (${d.district_state})` : '—'}
         </span>
       ),
@@ -263,7 +263,7 @@ export function AdminDealersPage() {
       key: 'brands',
       header: 'Authorized Brands',
       render: (d) => (
-        <div className="flex flex-wrap gap-1 max-w-[200px]">
+        <div className="flex flex-wrap gap-1 max-w-[140px]">
           {(d.brands || []).map((b) => (
             <span key={b} className="text-[10px] px-1.5 py-0.5 bg-slate-100 border border-slate-200 rounded text-slate-700">
               {b}

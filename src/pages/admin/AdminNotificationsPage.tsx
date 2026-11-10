@@ -127,10 +127,7 @@ export function AdminNotificationsPage() {
   return (
     <AdminLayout
       title="Notifications & Announcements"
-      breadcrumbs={[
-        { label: 'Admin', to: '/admin/dashboard' },
-        { label: 'Notifications' },
-      ]}
+      breadcrumbs={[{ label: 'Notifications' }]}
     >
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left: Broadcast Composer */}

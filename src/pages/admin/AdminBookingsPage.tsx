@@ -244,10 +244,7 @@ export function AdminBookingsPage() {
   return (
     <AdminLayout
       title="Bookings & Refunds"
-      breadcrumbs={[
-        { label: 'Admin', to: '/admin/dashboard' },
-        { label: 'Bookings' },
-      ]}
+      breadcrumbs={[{ label: 'Bookings' }]}
       searchValue={searchQuery}
       onSearchChange={(v) => {
         setSearchQuery(v);
@@ -255,8 +252,14 @@ export function AdminBookingsPage() {
       }}
       searchPlaceholder="Search booking code, buyer, dealer..."
       headerActions={
-        <Button size="sm" variant="outline" onClick={handleExportCsv}>
-          <Download className="w-3.5 h-3.5 mr-1" /> Export CSV
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleExportCsv}
+          leftIcon={<Download className="w-3.5 h-3.5" />}
+          className="whitespace-nowrap"
+        >
+          Export CSV
         </Button>
       }
     >

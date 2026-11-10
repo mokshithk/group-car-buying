@@ -257,10 +257,7 @@ export function AdminQuotationsPage() {
   return (
     <AdminLayout
       title="Quotations Oversight"
-      breadcrumbs={[
-        { label: 'Admin', to: '/admin/dashboard' },
-        { label: 'Quotations' },
-      ]}
+      breadcrumbs={[{ label: 'Quotations' }]}
       searchValue={searchQuery}
       onSearchChange={(v) => {
         setSearchQuery(v);
