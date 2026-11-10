@@ -5,8 +5,9 @@ import { AdminLayout } from '@/components/admin/AdminLayout';
 import { DataTable, ColumnDef } from '@/components/admin/DataTable';
 import { Group, District, GroupStatus } from '@/types';
 import { formatDate } from '@/lib/formatters';
+import { useToast } from '@/components/ui/Toast';
 import { Badge, Button, Tabs } from '@/components/ui';
-import { AlertTriangle, ExternalLink } from 'lucide-react';
+import { AlertTriangle, Clock, ExternalLink } from 'lucide-react';
 
 interface AdminGroupRow extends Group {
   active_members_count: number;
@@ -16,6 +17,8 @@ interface AdminGroupRow extends Group {
 type GroupTab = 'ALL' | GroupStatus | 'SUSPICIOUS';
 
 export function AdminGroupsPage() {
+  const { toast } = useToast();
+  const [isExpiring, setIsExpiring] = useState(false);
   const [tab, setTab] = useState<GroupTab>('ALL');
   const [districtFilter, setDistrictFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -187,6 +190,29 @@ export function AdminGroupsPage() {
     },
   ];
 
+  const handleRunExpiry = async () => {
+    setIsExpiring(true);
+    try {
+      const { data, error: rpcErr } = await supabase.rpc('fn_expire_1_member_groups');
+      if (rpcErr) throw rpcErr;
+      const res = data as { expired_count?: number; expiry_days?: number } | null;
+      toast({
+        type: 'success',
+        title: 'Group Expiry Complete',
+        message: `Expired ${res?.expired_count ?? 0} unformed 1-member group(s) older than ${res?.expiry_days ?? 45} days.`,
+      });
+      await loadGroups();
+    } catch (err: unknown) {
+      toast({
+        type: 'error',
+        title: 'Expiry Failed',
+        message: err instanceof Error ? err.message : 'Unable to run group expiry job.',
+      });
+    } finally {
+      setIsExpiring(false);
+    }
+  };
+
   return (
     <AdminLayout
       title="Buying Groups Oversight"
@@ -197,6 +223,11 @@ export function AdminGroupsPage() {
         setPage(1);
       }}
       searchPlaceholder="Search model, variant, district..."
+      headerActions={
+        <Button size="sm" variant="outline" isLoading={isExpiring} onClick={handleRunExpiry}>
+          <Clock className="w-3.5 h-3.5 mr-1" /> Run 1-Member Expiry
+        </Button>
+      }
     >
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
         <Tabs

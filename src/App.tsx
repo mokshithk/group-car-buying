@@ -54,6 +54,10 @@ import { AdminRatingsPage } from '@/pages/admin/AdminRatingsPage';
 import { AdminAdminsPage } from '@/pages/admin/AdminAdminsPage';
 import { AcceptAdminInvitePage } from '@/pages/admin/AcceptAdminInvitePage';
 import { AdminAccountPage } from '@/pages/admin/AdminAccountPage';
+import { AdminSettingsPage } from '@/pages/admin/AdminSettingsPage';
+import { AdminNotificationsPage } from '@/pages/admin/AdminNotificationsPage';
+import { AdminAuditLogPage } from '@/pages/admin/AdminAuditLogPage';
+import { AdminExportsPage } from '@/pages/admin/AdminExportsPage';
 import { ForcePasswordChangePage } from '@/pages/admin/ForcePasswordChangePage';
 
 import { isSupabaseConfigured } from '@/lib/supabase';
@@ -427,6 +431,38 @@ export default function App() {
                   element={
                     <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
                       <AdminAccountPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/settings"
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <AdminSettingsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/notifications"
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <AdminNotificationsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/audit"
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <AdminAuditLogPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/exports"
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <AdminExportsPage />
                     </ProtectedRoute>
                   }
                 />
