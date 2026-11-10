@@ -41,6 +41,10 @@ import { AdminDealerDetailPage } from '@/pages/admin/AdminDealerDetailPage';
 import { AdminBuyersPage } from '@/pages/admin/AdminBuyersPage';
 import { AdminBuyerDetailPage } from '@/pages/admin/AdminBuyerDetailPage';
 import { AdminDashboardPage } from '@/pages/admin/AdminDashboardPage';
+import { AdminCataloguePage } from '@/pages/admin/AdminCataloguePage';
+import { AdminDistrictsPage } from '@/pages/admin/AdminDistrictsPage';
+import { AdminGroupsPage } from '@/pages/admin/AdminGroupsPage';
+import { AdminGroupDetailPage } from '@/pages/admin/AdminGroupDetailPage';
 import { ForcePasswordChangePage } from '@/pages/admin/ForcePasswordChangePage';
 
 import { isSupabaseConfigured } from '@/lib/supabase';
@@ -317,6 +321,38 @@ export default function App() {
                   element={
                     <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
                       <AdminBuyerDetailPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/catalogue"
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <AdminCataloguePage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/districts"
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <AdminDistrictsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/groups"
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <AdminGroupsPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/groups/:id"
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <AdminGroupDetailPage />
                     </ProtectedRoute>
                   }
                 />

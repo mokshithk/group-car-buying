@@ -199,7 +199,7 @@
   - Refactored `AdminDealersPage` (`/admin/dealers`) with `AdminLayout`, `DataTable` pagination/sorting, CSV export, and `ReAuthModal` -> `admin_set_dealership_status`
   - Built `AdminDealerDetailPage` (`/admin/dealers/:id`) displaying profile, GSTIN, brands, districts, staff, quotes, bookings, ratings, reports, and status history
   - Built `AdminBuyersPage` (`/admin/buyers`) and `AdminBuyerDetailPage` (`/admin/buyers/:id`) with search/filters, suspend/reactivate/deactivate (`ReAuthModal`), and real deletion request processing synced with `ProfilePrivacyPage`
-- [ ] **Admin Task 4**: Catalogue, Districts & Groups Pages (`add catalogue, districts and groups pages`)
+- [x] **Admin Task 4**: Catalogue, Districts & Groups Pages (`add catalogue, districts and groups pages`)
 - [ ] **Admin Task 5**: Quotations, Bookings/Refunds, Reports & Ratings (`add bookings, reports and ratings pages`)
 - [ ] **Admin Task 6**: Admin Invites, Accept Invite & Admin Account Pages (`add admin invites and account page`)
 - [ ] **Admin Task 7**: Settings, Notifications, Audit Log, Exports & Group Expiry (`settings, notifications, audit log, exports and group expiry`)

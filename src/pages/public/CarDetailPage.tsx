@@ -100,7 +100,7 @@ export function CarDetailPage() {
           {/* Model Header & Hero */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 mb-12">
             <div className="lg:col-span-7">
-              <CarIllustration bodyType={model.body_type} className="h-64 sm:h-80" />
+              <CarIllustration bodyType={model.body_type} imageUrl={model.image_url} alt={model.name} className="h-64 sm:h-80" />
             </div>
 
             <div className="lg:col-span-5 flex flex-col justify-between">

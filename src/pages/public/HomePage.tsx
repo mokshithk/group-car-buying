@@ -9,9 +9,8 @@ import { Model, Variant } from '@/types';
 import { formatINR } from '@/lib/formatters';
 import { Users, FileCheck, ShieldCheck, ArrowRight, Search, Fuel, Sparkles, Loader2 } from 'lucide-react';
 
-const BODY_TYPES = ['All', 'SUV', 'Sedan', 'Hatchback'];
+const BODY_TYPES = ['All', 'SUV', 'Sedan', 'Hatchback', 'MUV', 'EV'];
 const FUEL_TYPES = ['All', 'Petrol', 'Diesel', 'CNG', 'Electric', 'Hybrid'];
-const BRANDS = ['All', 'Tata Motors', 'Hyundai', 'Mahindra', 'Maruti Suzuki', 'Volkswagen'];
 
 export function HomePage() {
   const [models, setModels] = useState<(Model & { variants: Variant[] })[]>([]);
@@ -52,6 +51,13 @@ export function HomePage() {
     window.addEventListener('hashchange', handleHashScroll);
     return () => window.removeEventListener('hashchange', handleHashScroll);
   }, []);
+
+  const brandOptions = useMemo(() => {
+    const names = Array.from(
+      new Set(models.map((m) => m.manufacturer?.name).filter((n): n is string => Boolean(n)))
+    ).sort();
+    return ['All', ...names];
+  }, [models]);
 
   const filteredModels = useMemo(() => {
     return models.filter((model) => {
@@ -234,7 +240,7 @@ export function HomePage() {
                   label="Brand"
                   value={selectedBrand}
                   onChange={(e) => setSelectedBrand(e.target.value)}
-                  options={BRANDS.map((b) => ({ value: b, label: b }))}
+                  options={brandOptions.map((b) => ({ value: b, label: b }))}
                 />
 
                 {/* Body Type Filter */}
@@ -314,7 +320,7 @@ export function HomePage() {
                 {filteredModels.map((model) => (
                   <Card key={model.id} hoverable className="flex flex-col group">
                     <div className="relative">
-                      <CarIllustration bodyType={model.body_type} />
+                      <CarIllustration bodyType={model.body_type} imageUrl={model.image_url} alt={model.name} />
                       <div className="absolute top-3 left-3 flex gap-1.5">
                         <Badge variant="default" size="sm" className="bg-white/90 backdrop-blur-sm">
                           {model.manufacturer?.name}

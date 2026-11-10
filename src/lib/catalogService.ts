@@ -20,7 +20,9 @@ export async function fetchDistricts(): Promise<District[]> {
     throw new Error(`Failed to load districts: ${error.message}`);
   }
 
-  return (data || []) as District[];
+  return ((data || []) as (District & { is_active?: boolean })[]).filter(
+    (d) => d.is_active !== false
+  ) as District[];
 }
 
 export async function fetchModels(): Promise<(Model & { variants: Variant[] })[]> {
@@ -37,7 +39,18 @@ export async function fetchModels(): Promise<(Model & { variants: Variant[] })[]
     throw new Error(`Failed to load car models: ${error.message}`);
   }
 
-  return (data || []) as (Model & { variants: Variant[] })[];
+  type ModelRow = Model & {
+    is_active?: boolean;
+    manufacturer?: { is_active?: boolean } | null;
+    variants?: (Variant & { is_active?: boolean })[];
+  };
+
+  return ((data || []) as ModelRow[])
+    .filter((m) => m.is_active !== false && m.manufacturer?.is_active !== false)
+    .map((m) => ({
+      ...m,
+      variants: (m.variants || []).filter((v) => v.is_active !== false),
+    })) as (Model & { variants: Variant[] })[];
 }
 
 export async function fetchModelById(modelId: string): Promise<(Model & { variants: Variant[] }) | null> {
@@ -55,7 +68,19 @@ export async function fetchModelById(modelId: string): Promise<(Model & { varian
     throw new Error(`Failed to load car model: ${error.message}`);
   }
 
-  return (data as (Model & { variants: Variant[] }) | null) ?? null;
+  if (!data) return null;
+  const row = data as Model & {
+    is_active?: boolean;
+    manufacturer?: { is_active?: boolean } | null;
+    variants?: (Variant & { is_active?: boolean })[];
+  };
+  if (row.is_active === false || row.manufacturer?.is_active === false) {
+    return null;
+  }
+  return {
+    ...row,
+    variants: (row.variants || []).filter((v) => v.is_active !== false),
+  } as Model & { variants: Variant[] };
 }
 
 export async function fetchVariantById(variantId: string): Promise<Variant | null> {

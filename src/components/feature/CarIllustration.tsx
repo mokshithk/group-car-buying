@@ -1,11 +1,41 @@
+import { useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
 
 interface CarIllustrationProps {
   bodyType?: 'Hatchback' | 'Sedan' | 'SUV' | 'MUV' | 'EV' | string;
+  imageUrl?: string | null;
+  alt?: string;
   className?: string;
 }
 
-export function CarIllustration({ bodyType = 'SUV', className }: CarIllustrationProps) {
+export function CarIllustration({ bodyType = 'SUV', imageUrl, alt, className }: CarIllustrationProps) {
+  const [imgFailed, setImgFailed] = useState(false);
+
+  useEffect(() => {
+    setImgFailed(false);
+  }, [imageUrl]);
+
+  if (imageUrl && !imgFailed) {
+    return (
+      <div
+        className={cn(
+          'relative w-full h-44 rounded-xl bg-slate-100 border border-slate-200/60 flex items-center justify-center overflow-hidden select-none',
+          className
+        )}
+      >
+        <img
+          src={imageUrl}
+          alt={alt || `${bodyType} car`}
+          onError={() => setImgFailed(true)}
+          className="w-full h-full object-cover"
+        />
+        <div className="absolute bottom-2 right-3 text-[10px] font-semibold uppercase tracking-wider text-slate-600 bg-white/90 px-2 py-0.5 rounded border border-slate-200/70">
+          {bodyType}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
