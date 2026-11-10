@@ -23,11 +23,13 @@ export function LoginPage() {
     setIsLoading(false);
 
     if (res.success) {
-      if (res.role === 'admin') {
-        if (redirectUrl && redirectUrl.startsWith('/admin')) {
+      if (res.role === 'admin' || res.role === 'super_admin') {
+        if (res.mustChangePassword) {
+          navigate('/admin/set-password', { replace: true });
+        } else if (redirectUrl && redirectUrl.startsWith('/admin')) {
           navigate(redirectUrl, { replace: true });
         } else {
-          navigate('/admin/dealers', { replace: true });
+          navigate('/admin/dashboard', { replace: true });
         }
       } else if (res.role === 'dealer') {
         const dStatus = res.dealershipStatus;

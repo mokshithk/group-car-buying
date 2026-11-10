@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { supabase, isSupabaseConfigured } from '@/lib/supabase';
+import { isAdminRole, isSuperAdminRole } from '@/lib/adminHelpers';
 import { Profile, Dealership, UserRole, DealershipStatus } from '@/types';
 import type { User } from '@supabase/supabase-js';
 
@@ -38,14 +39,20 @@ interface AuthContextType {
   profile: Profile | null;
   dealership: Dealership | null;
   role: UserRole | null;
+  isAdmin: boolean;
+  isSuperAdmin: boolean;
+  mustChangePassword: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<{
     success: boolean;
     error?: string;
     role?: UserRole;
     dealershipStatus?: DealershipStatus;
+    mustChangePassword?: boolean;
     isUnconfirmedEmail?: boolean;
   }>;
+  reauthenticate: (password: string) => Promise<{ success: boolean; error?: string }>;
+  completeAdminPasswordUpdate: (newPassword: string, isInitialForced?: boolean) => Promise<{ success: boolean; error?: string }>;
   requestSignupOtp: (email: string, fullName?: string) => Promise<OtpDispatchResult>;
   registerBuyer: (data: BuyerRegistrationData) => Promise<{ success: boolean; error?: string; requiresEmailConfirmation?: boolean }>;
   registerDealer: (data: DealerRegistrationData) => Promise<{ success: boolean; error?: string; requiresEmailConfirmation?: boolean }>;
@@ -59,7 +66,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [dealership, setDealership] = useState<Dealership | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(() => isSupabaseConfigured());
 
   const fetchProfileAndDealership = useCallback(async (userId: string): Promise<{ profile: Profile | null; dealership: Dealership | null }> => {
     try {
@@ -152,7 +159,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!isSupabaseConfigured()) {
-      setIsLoading(false);
       return;
     }
 
@@ -215,14 +221,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (data.user) {
-        await fetchProfileAndDealership(data.user.id);
         const { data: prof } = await supabase
           .from('profiles')
-          .select('role')
+          .select('role, status, suspension_reason, must_change_password')
           .eq('id', data.user.id)
           .maybeSingle();
 
+        if (prof?.status === 'SUSPENDED' || prof?.status === 'DEACTIVATED') {
+          await supabase.auth.signOut();
+          setUser(null);
+          setProfile(null);
+          setDealership(null);
+          return {
+            success: false,
+            error:
+              prof.suspension_reason ||
+              `Your account has been ${prof.status.toLowerCase()}. Please contact support@autogroup.in.`,
+          };
+        }
+
+        try {
+          await supabase.rpc('sync_user_sign_in');
+        } catch {
+          // Ignore if migration 006 not yet applied
+        }
+
+        await fetchProfileAndDealership(data.user.id);
+
         const role = (prof?.role as UserRole) || 'buyer';
+        const mustChangePassword = Boolean(prof?.must_change_password);
         let dealershipStatus: DealershipStatus | undefined;
 
         if (role === 'dealer') {
@@ -252,7 +279,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
-        return { success: true, role, dealershipStatus };
+        return { success: true, role, dealershipStatus, mustChangePassword };
       }
       return { success: false, error: 'Login failed. Please check credentials.' };
     } catch (err: unknown) {
@@ -264,6 +291,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const reauthenticate = async (password: string): Promise<{ success: boolean; error?: string }> => {
+    const email = user?.email || profile?.email;
+    if (!email) {
+      return { success: false, error: 'No signed-in user email found for re-authentication.' };
+    }
+    if (!password) {
+      return { success: false, error: 'Please enter your current password to confirm.' };
+    }
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      return {
+        success: false,
+        error: error.message.toLowerCase().includes('invalid login credentials')
+          ? 'Incorrect password. Re-authentication failed.'
+          : error.message,
+      };
+    }
+    return { success: true };
+  };
+
+  const completeAdminPasswordUpdate = async (
+    newPassword: string,
+    isInitialForced: boolean = false
+  ): Promise<{ success: boolean; error?: string }> => {
+    const { error: updateErr } = await supabase.auth.updateUser({ password: newPassword });
+    if (updateErr) {
+      return { success: false, error: updateErr.message };
+    }
+
+    const { error: rpcErr } = await supabase.rpc('admin_complete_password_change', {
+      p_is_initial_forced: isInitialForced,
+    });
+    if (rpcErr) {
+      return { success: false, error: rpcErr.message };
+    }
+
+    const uid = user?.id;
+    if (uid) {
+      await fetchProfileAndDealership(uid);
+    } else {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.id) {
+        await fetchProfileAndDealership(session.user.id);
+      }
+    }
+    return { success: true };
   };
 
   const requestSignupOtp = async (email: string, fullName?: string): Promise<OtpDispatchResult> => {
@@ -539,8 +614,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         profile,
         dealership,
         role: profile?.role ?? null,
+        isAdmin: isAdminRole(profile?.role),
+        isSuperAdmin: isSuperAdminRole(profile?.role),
+        mustChangePassword: Boolean(profile?.must_change_password),
         isLoading,
         login,
+        reauthenticate,
+        completeAdminPasswordUpdate,
         requestSignupOtp,
         registerBuyer,
         registerDealer,

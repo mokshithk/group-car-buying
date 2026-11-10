@@ -184,3 +184,18 @@
   - Added pure unit tests (`tests/unit/business-rules.spec.ts`) covering INR formatting, refund math, quote ranking, and incomplete quote validation
   - Updated Playwright E2E suite (`tests/e2e.spec.ts`) to 13 tests covering all responsive viewports, registration, error banners, route guards, and status views
   - Created comprehensive QA report (`docs/test-report.md`), refreshed `README.md`, `supabase/RUN_ME_FIRST.md`, and `docs/auth-setup.md`
+
+---
+
+## Admin Module Implementation Plan & Progress
+
+- [x] **Admin Task 1**: Admin Roles, Security Model & Audit Helpers (`add admin roles and audit helpers`)
+  - Extended `profiles.role` to support `super_admin` & `admin` with signup trigger lockdown, `is_admin()`, `is_super_admin()`, last `super_admin` guard, append-only `audit_log`, `admin_invites`, and transactional `SECURITY DEFINER` RPCs in `006_admin_module.sql`
+  - Created `supabase/make_first_admin.sql`, `adminHelpers.ts` (validators, outlier detector, CSV builder, SHA-256 token hashing), `ForbiddenPage` (403), `ForcePasswordChangePage` (first-login 12+ char reset), and ESLint/Supabase CLI local tooling
+- [ ] **Admin Task 2**: Admin Layout Shell, Idle Timeout, Re-auth Modal & Dashboard (`add admin layout and dashboard`)
+- [ ] **Admin Task 3**: Dealer & Buyer Management (`add dealer and buyer management`)
+- [ ] **Admin Task 4**: Catalogue, Districts & Groups Pages (`add catalogue, districts and groups pages`)
+- [ ] **Admin Task 5**: Quotations, Bookings/Refunds, Reports & Ratings (`add bookings, reports and ratings pages`)
+- [ ] **Admin Task 6**: Admin Invites, Accept Invite & Admin Account Pages (`add admin invites and account page`)
+- [ ] **Admin Task 7**: Settings, Notifications, Audit Log, Exports & Group Expiry (`settings, notifications, audit log, exports and group expiry`)
+- [ ] **Admin Task 8**: Remote Migrations, First Admin & Test Setup, Full Test Suite & Docs (`tests, test report and documentation`)

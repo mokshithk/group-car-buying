@@ -16,8 +16,8 @@ export function VerifyOtpPage() {
   const handleSuccess = async () => {
     const res = await refreshProfile();
     const currentRole = res?.profile?.role || profile?.role;
-    if (currentRole === 'admin') {
-      navigate('/admin/dealers', { replace: true });
+    if (currentRole === 'admin' || currentRole === 'super_admin') {
+      navigate(res?.profile?.must_change_password ? '/admin/set-password' : '/admin/dashboard', { replace: true });
     } else if (currentRole === 'dealer') {
       const dStatus = res?.dealership?.status || dealership?.status;
       if (dStatus === 'REJECTED' || dStatus === 'SUSPENDED') {

@@ -79,7 +79,7 @@ export function AdminDealersPage() {
         .filter((du) => du.role === 'owner')
         .map((du) => du.user_id);
 
-      let ownerMap = new Map<string, string>(); // dealership_id -> owner_name
+      const ownerMap = new Map<string, string>(); // dealership_id -> owner_name
       if (ownerUserIds.length > 0) {
         const { data: profData } = await supabase
           .from('profiles')

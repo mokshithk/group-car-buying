@@ -95,7 +95,11 @@ export function ForgotPasswordPage() {
         if (otpData.smtpError) {
           recoverySmtpErr = otpData.smtpError;
         }
-      } catch (_) {}
+      } catch (otpErr) {
+        if (import.meta.env.DEV) {
+          console.warn('OTP dispatch fallback error:', otpErr);
+        }
+      }
 
       // Advance to OTP verification step
       setDevOtp(recoveryDevOtp);

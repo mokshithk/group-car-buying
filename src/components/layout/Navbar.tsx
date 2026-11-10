@@ -89,10 +89,20 @@ export function Navbar() {
           {user && profile ? (
             <div className="flex items-center gap-3">
               <Link
-                to={profile.role === 'dealer' ? '/dealer/dashboard' : '/buyer/dashboard'}
+                to={
+                  profile.role === 'admin' || profile.role === 'super_admin'
+                    ? '/admin/dashboard'
+                    : profile.role === 'dealer'
+                    ? '/dealer/dashboard'
+                    : '/buyer/dashboard'
+                }
               >
                 <Button variant="secondary" size="sm" leftIcon={<LayoutDashboard className="w-4 h-4" />}>
-                  {profile.role === 'dealer' ? 'Dealer Portal' : 'My Dashboard'}
+                  {profile.role === 'admin' || profile.role === 'super_admin'
+                    ? 'Admin Portal'
+                    : profile.role === 'dealer'
+                    ? 'Dealer Portal'
+                    : 'My Dashboard'}
                 </Button>
               </Link>
               <div className="flex items-center gap-2 pl-2 border-l border-slate-200">

@@ -2,7 +2,10 @@
  * TypeScript types for all database tables, enums, views, and functions.
  */
 
-export type UserRole = 'buyer' | 'dealer' | 'admin';
+export type UserRole = 'buyer' | 'dealer' | 'admin' | 'super_admin';
+
+export type AccountStatus = 'ACTIVE' | 'SUSPENDED' | 'DEACTIVATED';
+export type DeletionStatus = 'NONE' | 'PENDING' | 'PROCESSED' | 'REJECTED';
 
 export type GroupStatus =
   | 'FORMING'
@@ -30,13 +33,25 @@ export type PaymentStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'CANCELLED';
 
 export type RefundReason = 'BUYER_CANCEL' | 'DEALER_FAULT';
 
+export type ReportStatus = 'OPEN' | 'INVESTIGATING' | 'RESOLVED' | 'REJECTED';
+
+export type AdminInviteStatus = 'PENDING' | 'ACCEPTED' | 'REVOKED' | 'EXPIRED';
+
 export interface Profile {
   id: string;
   role: UserRole;
   full_name: string;
   phone: string;
+  email?: string;
   district_id?: string;
   consent_share_details: boolean;
+  status?: AccountStatus;
+  suspension_reason?: string;
+  must_change_password?: boolean;
+  last_sign_in_at?: string;
+  deletion_requested_at?: string;
+  deletion_reason?: string;
+  deletion_status?: DeletionStatus;
   created_at: string;
   updated_at: string;
 }
@@ -46,6 +61,7 @@ export interface District {
   name: string;
   state: string;
   code: string;
+  is_active?: boolean;
   created_at: string;
 }
 
@@ -53,6 +69,7 @@ export interface Manufacturer {
   id: string;
   name: string;
   logo_url?: string;
+  is_active?: boolean;
   created_at: string;
 }
 
@@ -64,6 +81,7 @@ export interface Model {
   fuel_types: string[];
   image_url?: string;
   starting_price: number;
+  is_active?: boolean;
   created_at: string;
   // Joined fields
   manufacturer?: Manufacturer;
@@ -79,6 +97,7 @@ export interface Variant {
   engine_cc?: number;
   ex_showroom_price: number;
   features: string[];
+  is_active?: boolean;
   created_at: string;
   // Joined fields
   model?: Model;
@@ -94,6 +113,7 @@ export interface Dealership {
   contact_email: string;
   gst_number: string;
   rejection_reason?: string;
+  suspension_reason?: string;
   verified_at?: string;
   map_link_text?: string;
   brands: string[]; // Manufacturer IDs or names
@@ -117,6 +137,10 @@ export interface Group {
   target_members: number;
   status: GroupStatus;
   created_by: string;
+  is_suspicious?: boolean;
+  suspicious_reason?: string;
+  admin_notes?: string;
+  expired_at?: string;
   created_at: string;
   updated_at: string;
   // Computed / joined fields
@@ -154,10 +178,14 @@ export interface Quotation {
   validity_date: string;
   terms: string;
   is_complete: boolean;
+  is_active?: boolean;
+  deactivated_reason?: string;
   created_at: string;
   updated_at: string;
   // Joined dealership info
   dealership?: Dealership;
+  group?: Group;
+  quotation_versions?: QuotationVersion[];
 }
 
 export interface QuotationVersion {
@@ -216,6 +244,9 @@ export interface Booking {
   platform_fee: number;
   total_amount: number;
   status: BookingStatus;
+  dealer_suspended?: boolean;
+  fallback_delivered_by_admin?: string;
+  cancellation_reason?: string;
   price_snapshot: PriceSnapshot;
   buyer_name: string;
   buyer_phone: string;
@@ -225,6 +256,8 @@ export interface Booking {
   // Joined relations
   dealership?: Dealership;
   group?: Group;
+  payments?: Payment[];
+  refunds?: Refund[];
 }
 
 export interface Payment {
@@ -262,7 +295,16 @@ export interface Notification {
   user_id: string;
   title: string;
   message: string;
-  type: 'PRICE_CHANGE' | 'NEW_ELIGIBLE_GROUP' | 'NEW_LEAD' | 'NEW_BOOKING' | 'BOOKING_CANCELLED' | 'GENERAL';
+  type:
+    | 'PRICE_CHANGE'
+    | 'NEW_ELIGIBLE_GROUP'
+    | 'NEW_LEAD'
+    | 'NEW_BOOKING'
+    | 'BOOKING_CANCELLED'
+    | 'DEALER_APPROVAL'
+    | 'ADMIN_ALERT'
+    | 'SYSTEM'
+    | 'GENERAL';
   read: boolean;
   link_url?: string;
   created_at: string;
@@ -275,7 +317,13 @@ export interface DealerRating {
   buyer_id: string;
   rating: number; // 1 to 5
   review?: string;
+  is_hidden?: boolean;
+  hidden_reason?: string;
+  hidden_by?: string;
+  hidden_at?: string;
   created_at: string;
+  dealership?: Dealership;
+  buyer?: Profile;
 }
 
 export interface Report {
@@ -284,7 +332,41 @@ export interface Report {
   buyer_id: string;
   reason: string;
   details: string;
+  status?: ReportStatus;
+  admin_notes?: string;
+  action_taken?: string;
+  resolved_by?: string;
+  resolved_at?: string;
   created_at: string;
+  dealership?: Dealership;
+  buyer?: Profile;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  entity_type: string;
+  entity_id: string;
+  action: string;
+  actor_id?: string;
+  reason?: string;
+  before_summary?: Record<string, any> | null;
+  after_summary?: Record<string, any> | null;
+  payload?: Record<string, any> | null;
+  created_at: string;
+  actor?: { full_name?: string; email?: string; role?: UserRole } | null;
+}
+
+export interface AdminInvite {
+  id: string;
+  email: string;
+  role: 'admin' | 'super_admin';
+  invited_by?: string;
+  status: AdminInviteStatus;
+  convert_existing: boolean;
+  expires_at: string;
+  created_at: string;
+  accepted_at?: string;
+  inviter?: { full_name?: string; email?: string } | null;
 }
 
 export interface WishlistItem {

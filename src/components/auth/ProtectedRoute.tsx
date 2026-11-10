@@ -1,6 +1,8 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import { isAdminRole } from '@/lib/adminHelpers';
+import { ForbiddenPage } from '@/pages/admin/ForbiddenPage';
 import { UserRole } from '@/types';
 import { Skeleton, Button } from '@/components/ui';
 import { AlertTriangle, LogOut } from 'lucide-react';
@@ -16,7 +18,7 @@ export function ProtectedRoute({
   allowedRoles,
   requireVerifiedDealer = false,
 }: ProtectedRouteProps) {
-  const { user, profile, dealership, isLoading, logout } = useAuth();
+  const { user, profile, dealership, mustChangePassword, isLoading, logout } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
@@ -36,8 +38,8 @@ export function ProtectedRoute({
     return <Navigate to={`/login?redirect=${encodeURIComponent(location.pathname + location.search)}`} replace />;
   }
 
-  // 2. If logged in but profile is missing or role is unknown, show clear error & sign-out button (Section F.2)
-  if (!profile || !profile.role || !['buyer', 'dealer', 'admin'].includes(profile.role)) {
+  // 2. If logged in but profile is missing or role is unknown, show clear error & sign-out button
+  if (!profile || !profile.role || !['buyer', 'dealer', 'admin', 'super_admin'].includes(profile.role)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-surface-canvas p-6">
         <div className="w-full max-w-md p-6 bg-white rounded-2xl border border-slate-200 shadow-elevated text-center space-y-4">
@@ -55,7 +57,7 @@ export function ProtectedRoute({
               className="w-full"
               leftIcon={<LogOut className="w-4 h-4" />}
             >
-              Sign Out & Try Again
+              Sign Out &amp; Try Again
             </Button>
           </div>
         </div>
@@ -63,10 +65,17 @@ export function ProtectedRoute({
     );
   }
 
-  // 3. Role Guards: Roles cannot open each other's routes (Section E.3)
+  // 3. Role Guards: Buyers & dealers get 403 Forbidden on any /admin route; others redirect cleanly
+  const isTargetingAdminRoute =
+    location.pathname.startsWith('/admin') ||
+    (allowedRoles && allowedRoles.every((r) => isAdminRole(r)));
+
   if (allowedRoles && !allowedRoles.includes(profile.role)) {
-    if (profile.role === 'admin') {
-      return <Navigate to="/admin/dealers" replace />;
+    if (isTargetingAdminRoute && !isAdminRole(profile.role)) {
+      return <ForbiddenPage />;
+    }
+    if (isAdminRole(profile.role)) {
+      return <Navigate to={mustChangePassword ? '/admin/set-password' : '/admin/dashboard'} replace />;
     } else if (profile.role === 'dealer') {
       const dStatus = dealership?.status;
       if (dStatus === 'REJECTED' || dStatus === 'SUSPENDED') {
@@ -81,7 +90,12 @@ export function ProtectedRoute({
     return <Navigate to="/" replace />;
   }
 
-  // 4. Dealer status checks
+  // 4. First-login forced password change for newly provisioned admins
+  if (isAdminRole(profile.role) && mustChangePassword && location.pathname !== '/admin/set-password') {
+    return <Navigate to="/admin/set-password" replace />;
+  }
+
+  // 5. Dealer status checks
   if (profile.role === 'dealer') {
     const dStatus = dealership?.status;
     if (dStatus === 'REJECTED' || dStatus === 'SUSPENDED') {

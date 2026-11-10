@@ -37,6 +37,7 @@ import { DealerNotificationsPage } from '@/pages/dealer/DealerNotificationsPage'
 import { ShowroomProfilePage } from '@/pages/dealer/ShowroomProfilePage';
 import { StaffManagementPage } from '@/pages/dealer/StaffManagementPage';
 import { AdminDealersPage } from '@/pages/admin/AdminDealersPage';
+import { ForcePasswordChangePage } from '@/pages/admin/ForcePasswordChangePage';
 
 import { isSupabaseConfigured } from '@/lib/supabase';
 import { SupabaseErrorScreen } from '@/components/common/SupabaseErrorScreen';
@@ -268,9 +269,33 @@ export default function App() {
 
                 {/* Admin Protected Pages */}
                 <Route
+                  path="/admin/set-password"
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <ForcePasswordChangePage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/dashboard"
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <AdminDealersPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
                   path="/admin/dealers"
                   element={
-                    <ProtectedRoute allowedRoles={['admin']}>
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
+                      <AdminDealersPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin/*"
+                  element={
+                    <ProtectedRoute allowedRoles={['admin', 'super_admin']}>
                       <AdminDealersPage />
                     </ProtectedRoute>
                   }
